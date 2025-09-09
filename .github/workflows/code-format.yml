@@ -22,25 +22,45 @@ jobs:
       - name: Manual Checkout PR head branch
         if: github.event_name == 'pull_request'
         run: |
-          # 初始化仓库（如果 checkout 失败）
+          # 初始化仓库
           git init
-          git remote add origin https://github.com/${{ github.repository }}
+          # 添加 remote with token for auth (supports fork fetch)
+          git remote add origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}
           
           # Fetch base
-          git fetch origin main
-          git checkout main
+          git fetch origin main || git fetch origin master  # 支持 main/master
+          git checkout -b main origin/main || git checkout -b master origin/master
           
           # 获取正确分支名
           ORIGINAL_REF="${{ github.event.pull_request.head.ref }}"
+          USER_LOGIN="${{ github.event.pull_request.head.user.login }}"
+          echo "Debug: ORIGINAL_REF = $ORIGINAL_REF"
+          echo "Debug: USER_LOGIN = $USER_LOGIN"
+          echo "Debug: Is fork? ${{ github.event.pull_request.head.repo.full_name != github.repository }}"
+          
           if [[ "${{ github.event.pull_request.head.repo.full_name }}" != "${{ github.repository }}" ]]; then
-            FORK_BRANCH="${{ github.event.pull_request.head.user.login }}-${ORIGINAL_REF}"
-            git fetch origin "$FORK_BRANCH"
+            # Fork: 检查 ORIGINAL_REF 是否已带用户名（避免重复）
+            if [[ "$ORIGINAL_REF" == "$USER_LOGIN-"* ]]; then
+              FORK_BRANCH="$ORIGINAL_REF"  # 已带前缀，直接用
+              echo "Debug: Using existing prefixed ref: $FORK_BRANCH"
+            else
+              FORK_BRANCH="${USER_LOGIN}-${ORIGINAL_REF}"
+              echo "Debug: Building prefixed ref: $FORK_BRANCH"
+            fi
+            # Fetch fork branch (with error handling)
+            git fetch origin "$FORK_BRANCH" || {
+              echo "Warning: Failed to fetch fork branch $FORK_BRANCH. Falling back to head SHA."
+              git fetch origin "${{ github.event.pull_request.head.sha }}"  # 用 SHA 作为 fallback
+              git checkout -b "$FORK_BRANCH" "${{ github.event.pull_request.head.sha }}"
+            }
             git checkout "$FORK_BRANCH"
           else
+            # Internal PR: 直接用 ORIGINAL_REF
             git fetch origin "$ORIGINAL_REF"
             git checkout "$ORIGINAL_REF"
           fi
           
+          # 配置 Git 用户
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
         env:
