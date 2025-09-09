@@ -31,7 +31,7 @@ jobs:
               'Hello! Thank you for your contribution. To maintain code style consistency, please run the code formatting workflow in your repository:',
               '',
               '**步骤 / Steps:**',
-              '1. 📋 **前往你的仓库 Actions 页面** / Go to your repository Actions page: [点击这里](' + actionsUrl + ')',
+              '1. 📋 **前往你的仓库 Actions 页面** / Go to your repository Actions page: [点击这里](' + directLink + ')',
               '2. ⚡ **运行格式化工作流** / Run the format workflow: Select "Code Format with Astyle" on the left',
               '3. 🚀 **点击 "Run workflow"** / Click "Run workflow": Use default parameters or adjust as needed',
               '4. ⏳ **等待完成** / Wait for completion: The formatted code will be automatically pushed to your branch',
@@ -51,4 +51,3 @@ jobs:
             });
             
             console.log('✅ Format notification comment created');
-            
