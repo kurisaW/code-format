@@ -1,7 +1,7 @@
 name: PR Format Notification
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, reopened]
 
 jobs:
   notify-format:
@@ -12,13 +12,8 @@ jobs:
     permissions:
       pull-requests: write
       contents: read
+    
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install jq for JSON parsing
-        run: sudo apt-get install -y jq
-
       - name: Get PR information
         id: pr-info
         run: |
@@ -32,107 +27,69 @@ jobs:
           echo "branch=$BRANCH" >> $GITHUB_OUTPUT
           echo "pr_author=$PR_AUTHOR" >> $GITHUB_OUTPUT
 
-      - name: Find existing format notification comment
-        id: find-comment
-        run: |
-          PR_NUMBER=${{ steps.pr-info.outputs.pr_number }}
-          
-          # 获取所有评论
-          comments_response=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            -H "Accept: application/vnd.github.v3+json" \
-            "https://api.github.com/repos/${{ github.repository }}/issues/$PR_NUMBER/comments")
-          
-          # 查找格式化的通知评论
-          existing_comment_id=$(echo "$comments_response" | jq -r '.[] | select(.user.login == "github-actions[bot]") | select(.body | contains("⚠️ 本PR来自 fork 仓库")) | .id' | head -1)
-          
-          if [ -n "$existing_comment_id" ] && [ "$existing_comment_id" != "null" ]; then
-            echo "comment_id=$existing_comment_id" >> $GITHUB_OUTPUT
-            echo "has_existing_comment=true" >> $GITHUB_OUTPUT
-            echo "Found existing comment: $existing_comment_id"
+      - name: Check for existing notification
+        id: check-existing
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number
+            });
             
-            # 获取现有评论的排除项
-            existing_body=$(echo "$comments_response" | jq -r ".[] | select(.id == $existing_comment_id) | .body")
-            if [[ "$existing_body" =~ "当前排除项："([^\\n]*) ]]; then
-              existing_exclude="${BASH_REMATCH[1]}"
-              echo "existing_exclude=$existing_exclude" >> $GITHUB_OUTPUT
-            fi
-          else
-            echo "has_existing_comment=false" >> $GITHUB_OUTPUT
-            echo "No existing comment found"
-          fi
+            const existingComment = comments.find(comment => 
+              comment.user.login === 'github-actions[bot]' &&
+              comment.body.includes('Please run the format workflow')
+            );
+            
+            core.setOutput('has_existing', !!existingComment);
 
-      - name: Check for new exclude patterns in comments
-        id: check-exclude
-        run: |
-          PR_NUMBER=${{ steps.pr-info.outputs.pr_number }}
-          
-          # 获取所有评论（包括非bot的评论）
-          comments_response=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            -H "Accept: application/vnd.github.v3+json" \
-            "https://api.github.com/repos/${{ github.repository }}/issues/$PR_NUMBER/comments")
-          
-          EXCLUDE_PATTERNS=""
-          
-          # 查找最新的包含exclude参数的评论
-          latest_exclude_comment=$(echo "$comments_response" | jq -r '.[] | select(.body | contains("/run-astyle-format")) | .created_at + "|" + .body' | sort -r | head -1)
-          
-          if [ -n "$latest_exclude_comment" ]; then
-            comment_body=$(echo "$latest_exclude_comment" | cut -d'|' -f2-)
-            if [[ "$comment_body" =~ exclude=([^[:space:]]*) ]]; then
-              EXCLUDE_PATTERNS="${BASH_REMATCH[1]}"
-              EXCLUDE_PATTERNS=$(echo "$EXCLUDE_PATTERNS" | sed 's/[^a-zA-Z0-9,_.-].*$//' | tr -d '"' | tr -d "'")
-            fi
-          fi
-          
-          # 如果没有新的排除项，使用现有的
-          if [ -z "$EXCLUDE_PATTERNS" ] && [ "${{ steps.find-comment.outputs.has_existing_comment }}" = "true" ]; then
-            EXCLUDE_PATTERNS="${{ steps.find-comment.outputs.existing_exclude }}"
-          fi
-          
-          echo "exclude_patterns=$EXCLUDE_PATTERNS" >> $GITHUB_OUTPUT
-          echo "Using exclude patterns: $EXCLUDE_PATTERNS"
+      - name: Create format notification
+        if: steps.check-existing.outputs.has_existing != 'true'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const forkRepo = '${{ steps.pr-info.outputs.fork_repo }}';
+            const branch = '${{ steps.pr-info.outputs.branch }}';
+            
+            const workflowUrl = `https://github.com/${forkRepo}/actions/workflows/astyle-format.yml`;
+            const actionsUrl = `https://github.com/${forkRepo}/actions`;
+            const directLink = `${workflowUrl}?branch=${encodeURIComponent(branch)}`;
+            
+            const message = `👋 你好！感谢你的贡献。为了保持代码风格统一，请在你的仓库中运行代码格式化工作流：
 
-      - name: Create or update format notification
-        run: |
-          PR_NUMBER=${{ steps.pr-info.outputs.pr_number }}
-          FORK_REPO=${{ steps.pr-info.outputs.fork_repo }}
-          BRANCH=${{ steps.pr-info.outputs.branch }}
-          EXCLUDE=${{ steps.check-exclude.outputs.exclude_patterns }}
-          EXISTING_COMMENT_ID=${{ steps.find-comment.outputs.comment_id }}
-          
-          # 构建通知消息
-          MESSAGE="⚠️ 本PR来自 fork 仓库（$FORK_REPO），请在你的仓库 Actions 页面点击运行格式化工作流，格式化完成后请将格式化 commit push 到分支 \`$BRANCH\`。"
-          MESSAGE="$MESSAGE\n最新格式化流程：[点击跳转](https://github.com/$FORK_REPO/actions/workflows/astyle-format.yml)"
-          
-          if [ -n "$EXCLUDE" ]; then
-            MESSAGE="$MESSAGE\n\n当前排除项：$EXCLUDE"
-          fi
-          
-          MESSAGE="$MESSAGE\n\n如需排除特定文件/目录，请在评论中输入：\n\`/run-astyle-format exclude=dir1,dir2,file1\`"
-          MESSAGE="$MESSAGE\n\n> 此评论会自动更新，请勿手动删除"
-          
-          if [ -n "$EXISTING_COMMENT_ID" ] && [ "$EXISTING_COMMENT_ID" != "null" ]; then
-            # 更新现有评论
-            echo "Updating existing comment: $EXISTING_COMMENT_ID"
-            curl -X PATCH -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-              -H "Accept: application/vnd.github.v3+json" \
-              "https://api.github.com/repos/${{ github.repository }}/issues/comments/$EXISTING_COMMENT_ID" \
-              -d "{\"body\": \"$MESSAGE\"}"
-            echo "✅ Updated existing comment"
-          else
-            # 创建新评论
-            echo "Creating new comment"
-            curl -X POST -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-              -H "Accept: application/vnd.github.v3+json" \
-              "https://api.github.com/repos/${{ github.repository }}/issues/$PR_NUMBER/comments" \
-              -d "{\"body\": \"$MESSAGE\"}"
-            echo "✅ Created new comment"
-          fi
+Hello! Thank you for your contribution. To maintain code style consistency, please run the code formatting workflow in your repository:
+
+**步骤 / Steps:**
+1. 📋 **前往你的仓库 Actions 页面** / Go to your repository Actions page: [点击这里](${actionsUrl})
+2. ⚡ **运行格式化工作流** / Run the format workflow: Select "Code Format with Astyle" on the left
+3. 🚀 **点击 "Run workflow"** / Click "Run workflow": Use default parameters or adjust as needed
+4. ⏳ **等待完成** / Wait for completion: The formatted code will be automatically pushed to your branch
+
+**直达链接** / Direct link: [运行格式化工作流 / Run Format Workflow](${directLink})
+
+格式化完成后，commit 会自动推送到你的 \`${branch}\` 分支，PR 会自动更新。
+After formatting, commits will be automatically pushed to your \`${branch}\` branch and the PR will update automatically.
+
+> 💡 提示：此通知只在PR首次创建时显示一次
+> 💡 Note: This notification only appears when the PR is first created`;
+            
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: message
+            });
+            
+            console.log('✅ Format notification comment created');
 
       - name: Log completion
         run: |
-          echo "Format notification process completed successfully"
-          echo "PR: ${{ steps.pr-info.outputs.pr_number }}"
-          echo "Fork: ${{ steps.pr-info.outputs.fork_repo }}"
+          echo "Format notification process completed"
+          echo "PR Number: ${{ steps.pr-info.outputs.pr_number }}"
+          echo "Fork Repository: ${{ steps.pr-info.outputs.fork_repo }}"
           echo "Branch: ${{ steps.pr-info.outputs.branch }}"
-          echo "Exclude: ${{ steps.check-exclude.outputs.exclude_patterns }}"
+          echo "Existing notification: ${{ steps.check-existing.outputs.has_existing }}"

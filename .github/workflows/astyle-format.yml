@@ -12,91 +12,100 @@ on:
         required: true
         default: 'main'
 
-# 允许从上游仓库触发
 permissions:
   contents: write
   pull-requests: read
 
 jobs:
   format-code:
-    # 允许在fork仓库运行
     if: |
       github.event.pull_request.head.repo.fork == true ||
       github.repository != 'kurisaW/code-format'
     runs-on: ubuntu-latest
     
     steps:
-      - name: Checkout code with proper token
+      - name: Checkout code
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.inputs.branch }}
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Set up Astyle
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y astyle
+      - name: Install Astyle
+        run: sudo apt-get update && sudo apt-get install -y astyle
 
-      - name: Create exclude patterns
+      - name: Validate .astylerc
         run: |
-          EXCLUDE_PATTERNS="${{ github.event.inputs.exclude_patterns }}"
-          echo "EXCLUDE_PATTERNS=$EXCLUDE_PATTERNS" >> $GITHUB_ENV
-          echo "Exclude patterns: $EXCLUDE_PATTERNS"
+          if [ ! -f ".astylerc" ]; then
+            echo "❌ Error: .astylerc file not found in repository root!"
+            exit 1
+          fi
+          echo "✅ Found .astylerc configuration file"
 
-      - name: Format code with Astyle
+      - name: Find source files to format
+        id: find-files
         run: |
-          # 使用find命令查找需要格式化的文件
+          # 设置默认查找模式
           FIND_CMD="find . -type f \( -name '*.cpp' -o -name '*.h' -o -name '*.c' -o -name '*.hpp' -o -name '*.cc' \)"
           
+          # 处理排除模式
+          EXCLUDE_PATTERNS="${{ github.event.inputs.exclude_patterns }}"
           if [ -n "$EXCLUDE_PATTERNS" ]; then
             IFS=',' read -ra PATTERNS <<< "$EXCLUDE_PATTERNS"
             for pattern in "${PATTERNS[@]}"; do
               pattern=$(echo "$pattern" | xargs)  # 去除空格
-              FIND_CMD="$FIND_CMD -not -path \"*/$pattern/*\" -not -name \"$pattern\""
+              if [ -n "$pattern" ]; then
+                FIND_CMD="$FIND_CMD -not -path \"*/$pattern/*\" -not -name \"$pattern\""
+              fi
             done
           fi
           
-          echo "Find command: $FIND_CMD"
+          echo "执行查找命令: $FIND_CMD"
           FILES=$(eval $FIND_CMD 2>/dev/null || true)
           
           if [ -z "$FILES" ]; then
-            echo "No files found to format"
+            echo "❌ 未找到需要格式化的文件"
+            echo "files_count=0" >> $GITHUB_OUTPUT
             exit 0
           fi
           
-          echo "Files to format:"
-          echo "$FILES"
+          FILE_COUNT=$(echo "$FILES" | wc -l)
+          echo "找到 $FILE_COUNT 个需要格式化的文件"
+          echo "files_count=$FILE_COUNT" >> $GITHUB_OUTPUT
           
-          # 检查是否有.astylerc文件
-          if [ ! -f ".astylerc" ]; then
-            echo "Error: .astylerc file not found!"
-            exit 1
-          fi
+          # 将文件列表保存为多行输出
+          echo "files_list<<EOF" >> $GITHUB_OUTPUT
+          echo "$FILES" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Format code with Astyle
+        if: steps.find-files.outputs.files_count != '0'
+        run: |
+          echo "开始格式化代码..."
+          FILES="${{ steps.find-files.outputs.files_list }}"
           
-          # 格式化文件
           for file in $FILES; do
             if [ -f "$file" ]; then
-              echo "Formatting $file"
-              astyle --options=.astylerc "$file" || true
+              echo "📝 格式化: $file"
+              astyle --options=.astylerc "$file" || echo "⚠️  格式化 $file 时出现警告"
             fi
           done
+          echo "✅ 代码格式化完成"
 
       - name: Check for changes
-        id: changes
+        id: check-changes
         run: |
-          git status
           if git diff --quiet; then
+            echo "✅ 代码无需格式化"
             echo "has_changes=false" >> $GITHUB_OUTPUT
-            echo "No formatting changes needed"
           else
-            echo "has_changes=true" >> $GITHUB_OUTPUT
-            echo "Formatting changes detected"
+            echo "📋 检测到格式化更改:"
             git diff --name-only
+            echo "has_changes=true" >> $GITHUB_OUTPUT
           fi
 
       - name: Commit and push changes
-        if: steps.changes.outputs.has_changes == 'true'
+        if: steps.check-changes.outputs.has_changes == 'true'
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
@@ -107,7 +116,10 @@ jobs:
           
           echo "✅ 代码格式化完成并已推送到分支 ${{ github.event.inputs.branch }}"
 
-      - name: No changes needed
-        if: steps.changes.outputs.has_changes == 'false'
+      - name: Summary
         run: |
-          echo "✅ 代码无需格式化"
+          echo "=== 格式化总结 ==="
+          echo "分支: ${{ github.event.inputs.branch }}"
+          echo "排除模式: ${{ github.event.inputs.exclude_patterns || '无' }}"
+          echo "处理文件数: ${{ steps.find-files.outputs.files_count }}"
+          echo "有更改: ${{ steps.check-changes.outputs.has_changes }}"
