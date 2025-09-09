@@ -10,12 +10,9 @@
 //糟糕的注释      格式
 //缩进不一致的注释
 
-
-
-
 typedef struct
 {
-    int id;
+      int id;
     char name[50];
     float score;
 } Student;
@@ -34,7 +31,7 @@ enum Status {SUCCESS, FAILURE, ERROR};
 int global_var = 0;
 
 
-void badly_formatted_function (int param1, int* param2, char** param3)
+void badly_formatted_function (int param1,int* param2, char** param3)
 {
     if (param1 > 0)
     {
