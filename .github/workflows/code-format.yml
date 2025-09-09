@@ -1,6 +1,8 @@
-name: Astyle Format PR
+name: Ask Contributor to Run Astyle Format in Their Fork
 
 on:
+  pull_request:
+    types: [opened, synchronize, reopened]
   workflow_dispatch:
   issue_comment:
     types: [created]
@@ -8,48 +10,46 @@ on:
 jobs:
   astyle-format:
     if: |
+      (github.event_name == 'pull_request') ||
       (github.event_name == 'workflow_dispatch') ||
       (github.event_name == 'issue_comment' &&
        github.event.issue.pull_request &&
-       contains(github.event.comment.body, '/run-astyle-format')) ||
-      (github.event_name == 'pull_request')
+       contains(github.event.comment.body, '/run-astyle-format'))
     runs-on: ubuntu-latest
-
     steps:
-    - name: Checkout PR branch (fork)
-      uses: actions/checkout@v4
-      with:
-        repository: ${{ github.event.pull_request.head.repo.full_name }}
-        ref: ${{ github.event.pull_request.head.ref }}
-        token: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Set up Astyle
-      run: sudo apt-get update && sudo apt-get install -y astyle
-
-    - name: Run Astyle
-      run: |
-        find . \( -name "*.c" -o -name "*.h" -o -name "*.cpp" -o -name "*.hpp" \) -exec astyle --options=.astylerc {} \;
-
-    - name: Commit and push changes if any
-      run: |
-        if [[ -n "$(git status --porcelain)" ]]; then
-          git config --local user.name "github-actions[bot]"
-          git config --local user.email "github-actions[bot]@users.noreply.github.com"
-          git add .
-          git commit -m "Apply Astyle formatting"
-          git push
-        else
-          echo "No formatting changes to commit."
-        fi
-
-    - name: Comment PR with a link to workflow run
-      if: github.event_name == 'issue_comment'
+    - name: Detect fork PR and comment or update
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        issue_url="${{ github.event.issue.url }}"
-        run_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-        curl -s -X POST -H "Authorization: Bearer $GITHUB_TOKEN" \
-          -H "Accept: application/vnd.github+json" \
-          "$issue_url/comments" \
-          -d "{\"body\": \"✅ Astyle格式化CI已运行：[查看详情]($run_url)\"}"
+        PR_REPO="${{ github.event.pull_request.head.repo.full_name }}"
+        MAIN_REPO="${{ github.repository }}"
+        PR_USER="${{ github.event.pull_request.user.login }}"
+        PR_BRANCH="${{ github.event.pull_request.head.ref }}"
+        ACTIONS_URL="https://github.com/${PR_REPO}/actions"
+        PR_NUMBER="${{ github.event.pull_request.number }}"
+        WORKFLOW_URL="https://github.com/${MAIN_REPO}/actions/runs/${{ github.run_id }}"
+        UNIQUE_TAG="<!-- ASTYLE_FORMAT_FORK_NOTICE -->"
+        PROMPT="⚠️ PR 来自 fork 仓库（${PR_REPO}）。请前往你的仓库 Actions 页面 [运行 Astyle 格式化工作流](${ACTIONS_URL})，格式化完成后请将格式化 commit push 到分支 \`${PR_BRANCH}\`。\n\n最新格式化流程：[点击跳转](${WORKFLOW_URL})\n${UNIQUE_TAG}"
+        
+        if [ "$PR_REPO" != "$MAIN_REPO" ]; then
+          # 获取所有评论
+          COMMENTS_API="https://api.github.com/repos/${MAIN_REPO}/issues/${PR_NUMBER}/comments"
+          COMMENTS=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json" $COMMENTS_API)
+          FIRST_COMMENT_ID=$(echo "$COMMENTS" | jq ".[] | select(.body | contains(\"$UNIQUE_TAG\")) | .id" | head -n1)
+          if [ -n "$FIRST_COMMENT_ID" ]; then
+            # 更新第一条提示评论
+            UPDATE_API="https://api.github.com/repos/${MAIN_REPO}/issues/comments/${FIRST_COMMENT_ID}"
+            curl -s -X PATCH -H "Authorization: Bearer $GITHUB_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              $UPDATE_API \
+              -d "$(jq -n --arg body "$PROMPT" '{"body":$body}')"
+          else
+            # 发布新的提示评论
+            curl -s -X POST -H "Authorization: Bearer $GITHUB_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "$COMMENTS_API" \
+              -d "$(jq -n --arg body "$PROMPT" '{"body":$body}')"
+          fi
+        else
+          echo "PR is not from a fork, no action needed."
+        fi
