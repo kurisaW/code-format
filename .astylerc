@@ -24,8 +24,6 @@
 --pad-comma
 --pad-first-paren-out
 --unpad-paren
---pad-brackets
---pad-empty-paren
 
 # 指针和对齐
 --align-pointer=type

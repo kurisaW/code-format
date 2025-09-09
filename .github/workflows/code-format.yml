@@ -40,9 +40,9 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        pr_url="${{ github.event.issue.pull_request.url }}"
+        issue_url="${{ github.event.issue.url }}"
         run_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
         curl -s -X POST -H "Authorization: Bearer $GITHUB_TOKEN" \
           -H "Accept: application/vnd.github+json" \
-          "$pr_url/comments" \
+          "$issue_url/comments" \
           -d "{\"body\": \"✅ Astyle格式化CI已运行：[查看详情]($run_url)\"}"
