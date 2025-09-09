@@ -16,10 +16,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup GitHub CLI
-        run: |
-          gh auth status
-          gh api /user
+      - name: Install jq for JSON parsing
+        run: sudo apt-get install -y jq
 
       - name: Parse exclude patterns from comment
         id: parse-exclude
@@ -27,13 +25,16 @@ jobs:
           PR_NUMBER=${{ github.event.pull_request.number }}
           REPO=${{ github.repository }}
           
-          # 使用GitHub API直接获取评论
-          comments=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+          # 使用GitHub API获取评论
+          comments_response=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
             "https://api.github.com/repos/$REPO/issues/$PR_NUMBER/comments")
           
           EXCLUDE_PATTERNS=""
-          echo "$comments" | jq -r '.[] | select(.user.login == "github-actions[bot]") | select(.body | contains("⚠️ 本PR来自 fork 仓库")) | .body' | while read -r comment_body; do
-            if [[ -n "$comment_body" ]]; then
+          
+          # 使用jq解析评论
+          echo "$comments_response" | jq -r '.[] | select(.user.login == "github-actions[bot]") | .body' | while read -r comment_body; do
+            if [[ -n "$comment_body" ]] && [[ "$comment_body" == *"⚠️ 本PR来自 fork 仓库"* ]]; then
               if [[ "$comment_body" =~ exclude=([^,]*) ]]; then
                 EXCLUDE_PATTERNS="${BASH_REMATCH[1]}"
                 break
@@ -42,6 +43,7 @@ jobs:
           done
           
           echo "exclude_patterns=$EXCLUDE_PATTERNS" >> $GITHUB_OUTPUT
+          echo "Found exclude patterns: $EXCLUDE_PATTERNS"
 
       - name: Create or update format notification
         run: |
@@ -60,24 +62,33 @@ jobs:
           
           MESSAGE="$MESSAGE\n\n如需排除特定文件/目录，请在评论中输入：\n\`/run-astyle-format exclude=dir1,dir2,file1\`"
           
-          # 使用GitHub API直接操作评论
+          # 查找现有的通知评论
           comments_response=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
             "https://api.github.com/repos/${{ github.repository }}/issues/$PR_NUMBER/comments")
           
           existing_comment_id=$(echo "$comments_response" | jq -r '.[] | select(.user.login == "github-actions[bot]") | select(.body | contains("⚠️ 本PR来自 fork 仓库")) | .id' | head -1)
           
           if [ -n "$existing_comment_id" ] && [ "$existing_comment_id" != "null" ]; then
             # 更新现有评论
+            echo "Updating existing comment: $existing_comment_id"
             curl -X PATCH -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
               -H "Accept: application/vnd.github.v3+json" \
               "https://api.github.com/repos/${{ github.repository }}/issues/comments/$existing_comment_id" \
               -d "{\"body\": \"$MESSAGE\"}"
-            echo "Updated existing comment"
+            echo "✅ Updated existing comment"
           else
             # 创建新评论
+            echo "Creating new comment"
             curl -X POST -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
               -H "Accept: application/vnd.github.v3+json" \
               "https://api.github.com/repos/${{ github.repository }}/issues/$PR_NUMBER/comments" \
               -d "{\"body\": \"$MESSAGE\"}"
-            echo "Created new comment"
+            echo "✅ Created new comment"
           fi
+
+      - name: Handle errors
+        if: failure()
+        run: |
+          echo "Workflow failed, but continuing..."
+          # 这里可以添加错误处理逻辑，比如发送通知等

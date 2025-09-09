@@ -15,6 +15,9 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
+      - name: Install jq
+        run: sudo apt-get install -y jq
+
       - name: Check permissions
         id: check-permissions
         run: |
@@ -22,34 +25,91 @@ jobs:
           PR_AUTHOR="${{ github.event.issue.user.login }}"
           REPO_OWNER="${{ github.repository_owner }}"
           
+          # 允许PR作者、仓库所有者、特定合作者运行
           if [ "$COMMENT_AUTHOR" = "$PR_AUTHOR" ] || [ "$COMMENT_AUTHOR" = "$REPO_OWNER" ]; then
             echo "has_permission=true" >> $GITHUB_OUTPUT
+            echo "✅ User $COMMENT_AUTHOR has permission"
           else
             echo "has_permission=false" >> $GITHUB_OUTPUT
-            echo "User $COMMENT_AUTHOR is not authorized"
+            echo "❌ User $COMMENT_AUTHOR is not authorized"
           fi
 
-      - name: Parse and respond to comment
+      - name: Parse exclude patterns
+        if: steps.check-permissions.outputs.has_permission == 'true'
+        id: parse-exclude
+        run: |
+          COMMENT_BODY="${{ github.event.comment.body }}"
+          EXCLUDE_PATTERNS=""
+          
+          if [[ "$COMMENT_BODY" =~ exclude=([^[:space:]]*) ]]; then
+            EXCLUDE_PATTERNS="${BASH_REMATCH[1]}"
+            # 清理参数
+            EXCLUDE_PATTERNS=$(echo "$EXCLUDE_PATTERNS" | sed 's/[^a-zA-Z0-9,_.-].*$//' | tr -d '"' | tr -d "'")
+          fi
+          
+          echo "exclude_patterns=$EXCLUDE_PATTERNS" >> $GITHUB_OUTPUT
+          echo "Parsed exclude patterns: $EXCLUDE_PATTERNS"
+
+      - name: Update PR notification with exclude patterns
         if: steps.check-permissions.outputs.has_permission == 'true'
         run: |
           PR_NUMBER=${{ github.event.issue.number }}
-          COMMENT_BODY="${{ github.event.comment.body }}"
+          EXCLUDE_PATTERNS="${{ steps.parse-exclude.outputs.exclude_patterns }}"
           
-          # 解析exclude参数
-          if [[ "$COMMENT_BODY" =~ exclude=([^[:space:]]*) ]]; then
-            EXCLUDE_PATTERNS="${BASH_REMATCH[1]}"
-            EXCLUDE_PATTERNS=$(echo "$EXCLUDE_PATTERNS" | sed 's/[^a-zA-Z0-9,_.-].*$//')
+          # 获取现有的通知评论
+          comments_response=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/${{ github.repository }}/issues/$PR_NUMBER/comments")
+          
+          existing_comment_id=$(echo "$comments_response" | jq -r '.[] | select(.user.login == "github-actions[bot]") | select(.body | contains("⚠️ 本PR来自 fork 仓库")) | .id' | head -1)
+          
+          if [ -n "$existing_comment_id" ] && [ "$existing_comment_id" != "null" ]; then
+            # 获取当前评论内容
+            current_comment=$(echo "$comments_response" | jq -r ".[] | select(.id == $existing_comment_id) | .body")
+            
+            # 更新排除信息
+            if [ -n "$EXCLUDE_PATTERNS" ]; then
+              new_comment=$(echo "$current_comment" | sed "s/当前排除项：.*/当前排除项：$EXCLUDE_PATTERNS/")
+              if [[ "$current_comment" != *"当前排除项："* ]]; then
+                new_comment=$(echo "$current_comment" | sed "s|最新格式化流程|最新格式化流程\\n\\n当前排除项：$EXCLUDE_PATTERNS|")
+              fi
+            else
+              # 移除排除信息
+              new_comment=$(echo "$current_comment" | sed '/当前排除项：/d')
+            fi
+            
+            # 更新评论
+            curl -X PATCH -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              -H "Accept: application/vnd.github.v3+json" \
+              "https://api.github.com/repos/${{ github.repository }}/issues/comments/$existing_comment_id" \
+              -d "{\"body\": \"$new_comment\"}"
+            
+            echo "✅ Updated notification comment with exclude patterns"
           else
-            EXCLUDE_PATTERNS=""
+            echo "⚠️ No existing notification comment found to update"
           fi
+
+      - name: Respond to comment
+        if: steps.check-permissions.outputs.has_permission == 'true'
+        run: |
+          PR_NUMBER=${{ github.event.issue.number }}
+          EXCLUDE_PATTERNS="${{ steps.parse-exclude.outputs.exclude_patterns }}"
           
-          # 回复确认消息
           RESPONSE="✅ 已收到格式化指令"
           if [ -n "$EXCLUDE_PATTERNS" ]; then
-            RESPONSE="$RESPONSE，排除项: $EXCLUDE_PATTERNS"
+            RESPONSE="$RESPONSE，排除项已设置为: $EXCLUDE_PATTERNS"
+          else
+            RESPONSE="$RESPONSE，无排除项"
           fi
           
           curl -X POST -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             -H "Accept: application/vnd.github.v3+json" \
             "https://api.github.com/repos/${{ github.repository }}/issues/$PR_NUMBER/comments" \
             -d "{\"body\": \"$RESPONSE\"}"
+          
+          echo "✅ Responded to comment"
+
+      - name: Reject unauthorized comment
+        if: steps.check-permissions.outputs.has_permission == 'false'
+        run: |
+          echo "❌ User ${{ github.event.comment.user.login }} is not authorized to run formatting"
