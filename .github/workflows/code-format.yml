@@ -19,14 +19,32 @@ jobs:
 
     steps:
       # 步骤 1: 检出代码 - 修复 ref 配置
-      - name: Checkout PR head branch
-        run: |
-          BRANCH="${{ github.event.pull_request.head.ref }}"
-          if [[ "${{ github.event.pull_request.head.repo.full_name }}" != "${{ github.repository }}" ]]; then
-            BRANCH="${{ github.event.pull_request.head.user.login }}-${BRANCH}"
-          fi
-          git fetch origin "$BRANCH"
-          git checkout "$BRANCH"
+    - name: Manual Checkout PR head branch
+      if: github.event_name == 'pull_request'
+      run: |
+        # 初始化仓库（如果 checkout 失败）
+        git init
+        git remote add origin https://github.com/${{ github.repository }}
+        
+        # Fetch base
+        git fetch origin main
+        git checkout main
+        
+        # 获取正确分支名
+        ORIGINAL_REF="${{ github.event.pull_request.head.ref }}"
+        if [[ "${{ github.event.pull_request.head.repo.full_name }}" != "${{ github.repository }}" ]]; then
+          FORK_BRANCH="${{ github.event.pull_request.head.user.login }}-${ORIGINAL_REF}"
+          git fetch origin "$FORK_BRANCH"
+          git checkout "$FORK_BRANCH"
+        else
+          git fetch origin "$ORIGINAL_REF"
+          git checkout "$ORIGINAL_REF"
+        fi
+        
+        git config --global user.name "github-actions[bot]"
+        git config --global user.email "github-actions[bot]@users.noreply.github.com"
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # 步骤 2: 安装 Astyle 和 jq
       - name: Setup Astyle and jq
