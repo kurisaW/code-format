@@ -55,27 +55,29 @@ jobs:
             const forkRepo = '${{ steps.pr-info.outputs.fork_repo }}';
             const branch = '${{ steps.pr-info.outputs.branch }}';
             
-            const workflowUrl = `https://github.com/${forkRepo}/actions/workflows/astyle-format.yml`;
-            const actionsUrl = `https://github.com/${forkRepo}/actions`;
-            const directLink = `${workflowUrl}?branch=${encodeURIComponent(branch)}`;
+            const workflowUrl = 'https://github.com/' + forkRepo + '/actions/workflows/astyle-format.yml';
+            const actionsUrl = 'https://github.com/' + forkRepo + '/actions';
+            const directLink = workflowUrl + '?branch=' + encodeURIComponent(branch);
             
-            const message = `👋 你好！感谢你的贡献。为了保持代码风格统一，请在你的仓库中运行代码格式化工作流：
-
-Hello! Thank you for your contribution. To maintain code style consistency, please run the code formatting workflow in your repository:
-
-**步骤 / Steps:**
-1. 📋 **前往你的仓库 Actions 页面** / Go to your repository Actions page: [点击这里](${actionsUrl})
-2. ⚡ **运行格式化工作流** / Run the format workflow: Select "Code Format with Astyle" on the left
-3. 🚀 **点击 "Run workflow"** / Click "Run workflow": Use default parameters or adjust as needed
-4. ⏳ **等待完成** / Wait for completion: The formatted code will be automatically pushed to your branch
-
-**直达链接** / Direct link: [运行格式化工作流 / Run Format Workflow](${directLink})
-
-格式化完成后，commit 会自动推送到你的 \`${branch}\` 分支，PR 会自动更新。
-After formatting, commits will be automatically pushed to your \`${branch}\` branch and the PR will update automatically.
-
-> 💡 提示：此通知只在PR首次创建时显示一次
-> 💡 Note: This notification only appears when the PR is first created`;
+            const message = [
+              '👋 你好！感谢你的贡献。为了保持代码风格统一，请在你的仓库中运行代码格式化工作流：',
+              '',
+              'Hello! Thank you for your contribution. To maintain code style consistency, please run the code formatting workflow in your repository:',
+              '',
+              '**步骤 / Steps:**',
+              '1. 📋 **前往你的仓库 Actions 页面** / Go to your repository Actions page: [点击这里](' + actionsUrl + ')',
+              '2. ⚡ **运行格式化工作流** / Run the format workflow: Select "Code Format with Astyle" on the left',
+              '3. 🚀 **点击 "Run workflow"** / Click "Run workflow": Use default parameters or adjust as needed',
+              '4. ⏳ **等待完成** / Wait for completion: The formatted code will be automatically pushed to your branch',
+              '',
+              '**直达链接** / Direct link: [运行格式化工作流 / Run Format Workflow](' + directLink + ')',
+              '',
+              '格式化完成后，commit 会自动推送到你的 `' + branch + '` 分支，PR 会自动更新。',
+              'After formatting, commits will be automatically pushed to your `' + branch + '` branch and the PR will update automatically.',
+              '',
+              '> 💡 提示：此通知只在PR首次创建时显示一次',
+              '> 💡 Note: This notification only appears when the PR is first created'
+            ].join('\n');
             
             await github.rest.issues.createComment({
               owner: context.repo.owner,
