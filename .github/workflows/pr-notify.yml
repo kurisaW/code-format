@@ -19,38 +19,86 @@ jobs:
       - name: Install jq for JSON parsing
         run: sudo apt-get install -y jq
 
-      - name: Parse exclude patterns from comment
-        id: parse-exclude
-        run: |
-          PR_NUMBER=${{ github.event.pull_request.number }}
-          REPO=${{ github.repository }}
-          
-          # 使用GitHub API获取评论
-          comments_response=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            -H "Accept: application/vnd.github.v3+json" \
-            "https://api.github.com/repos/$REPO/issues/$PR_NUMBER/comments")
-          
-          EXCLUDE_PATTERNS=""
-          
-          # 使用jq解析评论
-          echo "$comments_response" | jq -r '.[] | select(.user.login == "github-actions[bot]") | .body' | while read -r comment_body; do
-            if [[ -n "$comment_body" ]] && [[ "$comment_body" == *"⚠️ 本PR来自 fork 仓库"* ]]; then
-              if [[ "$comment_body" =~ exclude=([^,]*) ]]; then
-                EXCLUDE_PATTERNS="${BASH_REMATCH[1]}"
-                break
-              fi
-            fi
-          done
-          
-          echo "exclude_patterns=$EXCLUDE_PATTERNS" >> $GITHUB_OUTPUT
-          echo "Found exclude patterns: $EXCLUDE_PATTERNS"
-
-      - name: Create or update format notification
+      - name: Get PR information
+        id: pr-info
         run: |
           PR_NUMBER=${{ github.event.pull_request.number }}
           FORK_REPO=${{ github.event.pull_request.head.repo.full_name }}
           BRANCH=${{ github.event.pull_request.head.ref }}
-          EXCLUDE=${{ steps.parse-exclude.outputs.exclude_patterns }}
+          PR_AUTHOR=${{ github.event.pull_request.user.login }}
+          
+          echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
+          echo "fork_repo=$FORK_REPO" >> $GITHUB_OUTPUT
+          echo "branch=$BRANCH" >> $GITHUB_OUTPUT
+          echo "pr_author=$PR_AUTHOR" >> $GITHUB_OUTPUT
+
+      - name: Find existing format notification comment
+        id: find-comment
+        run: |
+          PR_NUMBER=${{ steps.pr-info.outputs.pr_number }}
+          
+          # 获取所有评论
+          comments_response=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/${{ github.repository }}/issues/$PR_NUMBER/comments")
+          
+          # 查找格式化的通知评论
+          existing_comment_id=$(echo "$comments_response" | jq -r '.[] | select(.user.login == "github-actions[bot]") | select(.body | contains("⚠️ 本PR来自 fork 仓库")) | .id' | head -1)
+          
+          if [ -n "$existing_comment_id" ] && [ "$existing_comment_id" != "null" ]; then
+            echo "comment_id=$existing_comment_id" >> $GITHUB_OUTPUT
+            echo "has_existing_comment=true" >> $GITHUB_OUTPUT
+            echo "Found existing comment: $existing_comment_id"
+            
+            # 获取现有评论的排除项
+            existing_body=$(echo "$comments_response" | jq -r ".[] | select(.id == $existing_comment_id) | .body")
+            if [[ "$existing_body" =~ "当前排除项："([^\\n]*) ]]; then
+              existing_exclude="${BASH_REMATCH[1]}"
+              echo "existing_exclude=$existing_exclude" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "has_existing_comment=false" >> $GITHUB_OUTPUT
+            echo "No existing comment found"
+          fi
+
+      - name: Check for new exclude patterns in comments
+        id: check-exclude
+        run: |
+          PR_NUMBER=${{ steps.pr-info.outputs.pr_number }}
+          
+          # 获取所有评论（包括非bot的评论）
+          comments_response=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/${{ github.repository }}/issues/$PR_NUMBER/comments")
+          
+          EXCLUDE_PATTERNS=""
+          
+          # 查找最新的包含exclude参数的评论
+          latest_exclude_comment=$(echo "$comments_response" | jq -r '.[] | select(.body | contains("/run-astyle-format")) | .created_at + "|" + .body' | sort -r | head -1)
+          
+          if [ -n "$latest_exclude_comment" ]; then
+            comment_body=$(echo "$latest_exclude_comment" | cut -d'|' -f2-)
+            if [[ "$comment_body" =~ exclude=([^[:space:]]*) ]]; then
+              EXCLUDE_PATTERNS="${BASH_REMATCH[1]}"
+              EXCLUDE_PATTERNS=$(echo "$EXCLUDE_PATTERNS" | sed 's/[^a-zA-Z0-9,_.-].*$//' | tr -d '"' | tr -d "'")
+            fi
+          fi
+          
+          # 如果没有新的排除项，使用现有的
+          if [ -z "$EXCLUDE_PATTERNS" ] && [ "${{ steps.find-comment.outputs.has_existing_comment }}" = "true" ]; then
+            EXCLUDE_PATTERNS="${{ steps.find-comment.outputs.existing_exclude }}"
+          fi
+          
+          echo "exclude_patterns=$EXCLUDE_PATTERNS" >> $GITHUB_OUTPUT
+          echo "Using exclude patterns: $EXCLUDE_PATTERNS"
+
+      - name: Create or update format notification
+        run: |
+          PR_NUMBER=${{ steps.pr-info.outputs.pr_number }}
+          FORK_REPO=${{ steps.pr-info.outputs.fork_repo }}
+          BRANCH=${{ steps.pr-info.outputs.branch }}
+          EXCLUDE=${{ steps.check-exclude.outputs.exclude_patterns }}
+          EXISTING_COMMENT_ID=${{ steps.find-comment.outputs.comment_id }}
           
           # 构建通知消息
           MESSAGE="⚠️ 本PR来自 fork 仓库（$FORK_REPO），请在你的仓库 Actions 页面点击运行格式化工作流，格式化完成后请将格式化 commit push 到分支 \`$BRANCH\`。"
@@ -61,20 +109,14 @@ jobs:
           fi
           
           MESSAGE="$MESSAGE\n\n如需排除特定文件/目录，请在评论中输入：\n\`/run-astyle-format exclude=dir1,dir2,file1\`"
+          MESSAGE="$MESSAGE\n\n> 此评论会自动更新，请勿手动删除"
           
-          # 查找现有的通知评论
-          comments_response=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            -H "Accept: application/vnd.github.v3+json" \
-            "https://api.github.com/repos/${{ github.repository }}/issues/$PR_NUMBER/comments")
-          
-          existing_comment_id=$(echo "$comments_response" | jq -r '.[] | select(.user.login == "github-actions[bot]") | select(.body | contains("⚠️ 本PR来自 fork 仓库")) | .id' | head -1)
-          
-          if [ -n "$existing_comment_id" ] && [ "$existing_comment_id" != "null" ]; then
+          if [ -n "$EXISTING_COMMENT_ID" ] && [ "$EXISTING_COMMENT_ID" != "null" ]; then
             # 更新现有评论
-            echo "Updating existing comment: $existing_comment_id"
+            echo "Updating existing comment: $EXISTING_COMMENT_ID"
             curl -X PATCH -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
               -H "Accept: application/vnd.github.v3+json" \
-              "https://api.github.com/repos/${{ github.repository }}/issues/comments/$existing_comment_id" \
+              "https://api.github.com/repos/${{ github.repository }}/issues/comments/$EXISTING_COMMENT_ID" \
               -d "{\"body\": \"$MESSAGE\"}"
             echo "✅ Updated existing comment"
           else
@@ -87,8 +129,10 @@ jobs:
             echo "✅ Created new comment"
           fi
 
-      - name: Handle errors
-        if: failure()
+      - name: Log completion
         run: |
-          echo "Workflow failed, but continuing..."
-          # 这里可以添加错误处理逻辑，比如发送通知等
+          echo "Format notification process completed successfully"
+          echo "PR: ${{ steps.pr-info.outputs.pr_number }}"
+          echo "Fork: ${{ steps.pr-info.outputs.fork_repo }}"
+          echo "Branch: ${{ steps.pr-info.outputs.branch }}"
+          echo "Exclude: ${{ steps.check-exclude.outputs.exclude_patterns }}"
