@@ -63,9 +63,10 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const prNumber = `${{ steps.prinfo.outputs.prNumber }}`
+            const prNumber = Number('${{ steps.prinfo.outputs.prNumber }}')
             const comments = await github.rest.issues.listComments({
-              ...context.repo,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
               issue_number: prNumber,
             })
             let notifyComment = comments.data.find(c => c.body.startsWith("⚠️ 本PR来自 fork 仓库"))
@@ -76,18 +77,20 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const prNumber = `${{ steps.prinfo.outputs.prNumber }}`
+            const prNumber = Number('${{ steps.prinfo.outputs.prNumber }}')
             const commentId = `${{ steps.find_comment.outputs.commentId }}`
             const body = `${{ steps.content.outputs.comment }}`
             if (commentId) {
               await github.rest.issues.updateComment({
-                ...context.repo,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
                 comment_id: commentId,
                 body,
               })
             } else {
               await github.rest.issues.createComment({
-                ...context.repo,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
                 issue_number: prNumber,
                 body,
               })
