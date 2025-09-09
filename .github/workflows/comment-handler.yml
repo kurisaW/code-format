@@ -1,0 +1,87 @@
+name: Comment Handler
+on:
+  issue_comment:
+    types: [created, edited]
+
+jobs:
+  handle-format-comment:
+    if: |
+      github.repository == 'kurisaW/code-format' &&  # 替换为实际的上游仓库名
+      github.event.issue.pull_request &&
+      contains(github.event.comment.body, '/run-astyle-format')
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      actions: write
+
+    steps:
+      - name: Check if comment is from PR author or maintainer
+        id: check-permissions
+        run: |
+          COMMENT_AUTHOR="${{ github.event.comment.user.login }}"
+          PR_AUTHOR="${{ github.event.issue.user.login }}"
+          REPO_OWNER="${{ github.repository_owner }}"
+          
+          # 允许PR作者、仓库维护者、合作者运行格式化
+          if [ "$COMMENT_AUTHOR" = "$PR_AUTHOR" ] || [ "$COMMENT_AUTHOR" = "$REPO_OWNER" ] || [ "$COMMENT_AUTHOR" == "github-actions[bot]" ]; then
+            echo "has_permission=true" >> $GITHUB_OUTPUT
+          else
+            # 检查是否是合作者
+            IS_COLLABORATOR=$(gh api repos/${{ github.repository }}/collaborators/$COMMENT_AUTHOR --silent > /dev/null 2>&1 && echo "true" || echo "false")
+            echo "has_permission=$IS_COLLABORATOR" >> $GITHUB_OUTPUT
+          fi
+
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Parse exclude patterns
+        if: steps.check-permissions.outputs.has_permission == 'true'
+        id: parse-exclude
+        run: |
+          COMMENT_BODY="${{ github.event.comment.body }}"
+          EXCLUDE_PATTERNS=""
+          
+          if [[ "$COMMENT_BODY" =~ exclude=([^[:space:]]*) ]]; then
+            EXCLUDE_PATTERNS="${BASH_REMATCH[1]}"
+            # 移除可能的后缀字符
+            EXCLUDE_PATTERNS=$(echo "$EXCLUDE_PATTERNS" | sed 's/[^a-zA-Z0-9,_.-].*$//')
+          fi
+          
+          echo "exclude_patterns=$EXCLUDE_PATTERNS" >> $GITHUB_OUTPUT
+          echo "Detected exclude patterns: $EXCLUDE_PATTERNS"
+
+      - name: Update notification with exclude patterns
+        if: steps.check-permissions.outputs.has_permission == 'true'
+        run: |
+          PR_NUMBER=${{ github.event.issue.number }}
+          EXCLUDE_PATTERNS="${{ steps.parse-exclude.outputs.exclude_patterns }}"
+          
+          # 获取现有的通知评论并更新
+          EXISTING_COMMENT_ID=$(gh api repos/${{ github.repository }}/issues/$PR_NUMBER/comments --jq '.[] | select(.user.login == "github-actions[bot]") | select(.body | contains("⚠️ 本PR来自 fork 仓库")) | .id' | head -1 || true)
+          
+          if [ -n "$EXISTING_COMMENT_ID" ]; then
+            # 构建更新后的消息
+            CURRENT_BODY=$(gh api repos/${{ github.repository }}/issues/comments/$EXISTING_COMMENT_ID --jq '.body')
+            
+            # 移除旧的排除信息
+            NEW_BODY=$(echo "$CURRENT_BODY" | sed '/当前排除项：/d' | sed '/如需排除特定文件\/目录/d')
+            
+            # 添加新的排除信息
+            if [ -n "$EXCLUDE_PATTERNS" ]; then
+              NEW_BODY="$NEW_BODY\n\n当前排除项：$EXCLUDE_PATTERNS"
+            fi
+            
+            NEW_BODY="$NEW_BODY\n\n如需排除特定文件/目录，请在评论中输入：\n\`/run-astyle-format exclude=dir1,dir2,file1\`"
+            
+            gh api repos/${{ github.repository }}/issues/comments/$EXISTING_COMMENT_ID -f body="$NEW_BODY"
+            echo "Updated notification comment with exclude patterns"
+          fi
+
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Reject unauthorized comment
+        if: steps.check-permissions.outputs.has_permission == 'false'
+        run: |
+          echo "User ${{ github.event.comment.user.login }} is not authorized to run formatting"
+          # 可以添加回复评论的逻辑

@@ -1,0 +1,66 @@
+name: PR Format Notification
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  notify-format:
+    if: |
+      github.repository == 'kurisaW/code-format'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Parse exclude patterns from comment
+        id: parse-exclude
+        run: |
+          # 获取PR评论并解析exclude参数
+          PR_NUMBER=${{ github.event.pull_request.number }}
+          REPO=${{ github.repository }}
+          COMMENT_BODY=$(gh api repos/$REPO/issues/$PR_NUMBER/comments --jq '.[] | select(.user.login == "github-actions[bot]") | select(.body | contains("⚠️ 本PR来自 fork 仓库")) | .body' | head -1 || true)
+          
+          EXCLUDE_PATTERNS=""
+          if [[ "$COMMENT_BODY" =~ exclude=([^,]*) ]]; then
+            EXCLUDE_PATTERNS="${BASH_REMATCH[1]}"
+          fi
+          
+          echo "exclude_patterns=$EXCLUDE_PATTERNS" >> $GITHUB_OUTPUT
+
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create or update format notification
+        run: |
+          PR_NUMBER=${{ github.event.pull_request.number }}
+          FORK_REPO=${{ github.event.pull_request.head.repo.full_name }}
+          BRANCH=${{ github.event.pull_request.head.ref }}
+          EXCLUDE=${{ steps.parse-exclude.outputs.exclude_patterns }}
+          
+          # 构建通知消息
+          MESSAGE="⚠️ 本PR来自 fork 仓库（$FORK_REPO），请在你的仓库 Actions 页面点击运行格式化工作流，格式化完成后请将格式化 commit push 到分支 \`$BRANCH\`。"
+          MESSAGE="$MESSAGE\n最新格式化流程：[点击跳转](https://github.com/$FORK_REPO/actions)"
+          
+          if [ -n "$EXCLUDE" ]; then
+            MESSAGE="$MESSAGE\n\n当前排除项：$EXCLUDE"
+          fi
+          
+          MESSAGE="$MESSAGE\n\n如需排除特定文件/目录，请在评论中输入：\n\`/run-astyle-format exclude=dir1,dir2,file1\`"
+          
+          # 查找现有的通知评论
+          EXISTING_COMMENT_ID=$(gh api repos/${{ github.repository }}/issues/$PR_NUMBER/comments --jq '.[] | select(.user.login == "github-actions[bot]") | select(.body | contains("⚠️ 本PR来自 fork 仓库")) | .id' | head -1 || true)
+          
+          if [ -n "$EXISTING_COMMENT_ID" ]; then
+            # 更新现有评论
+            gh api repos/${{ github.repository }}/issues/comments/$EXISTING_COMMENT_ID -f body="$MESSAGE"
+            echo "Updated existing comment"
+          else
+            # 创建新评论
+            gh api repos/${{ github.repository }}/issues/$PR_NUMBER/comments -f body="$MESSAGE"
+            echo "Created new comment"
+          fi
+
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
