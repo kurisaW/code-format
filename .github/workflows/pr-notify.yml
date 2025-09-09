@@ -1,7 +1,11 @@
 name: PR Format Notification
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, synchronize]
+
+permissions:
+  pull-requests: write   # 仅允许写 PR 评论
+  contents: read         # 最小化权限
 
 jobs:
   notify-format:
@@ -12,74 +16,66 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # 获取PR的commit信息
           echo "Event action: ${{ github.event.action }}"
           
           commits=$(curl -s \
             -H "Accept: application/vnd.github.v3+json" \
             -H "Authorization: Bearer $GITHUB_TOKEN" \
             "https://api.github.com/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/commits")
-          
-          # 检查API响应是否有效
+
           if echo "$commits" | jq -e 'type == "array"' > /dev/null; then
             commit_count=$(echo "$commits" | jq '. | length')
             echo "PR commit count: $commit_count"
-            
-            # 判断是否应该添加评论
+
             should_comment=false
             if [ "${{ github.event.action }}" = "opened" ]; then
-              echo "PR opened event detected"
               should_comment=true
             elif [ "${{ github.event.action }}" = "synchronize" ] && [ "$commit_count" -eq 1 ]; then
-              echo "Synchronize event with only 1 commit detected"
               should_comment=true
             fi
-            
+
             if [ "$should_comment" = true ]; then
               echo "Adding format notification comment..."
               
-              # 构建评论消息 - 使用数组
               branch="${{ github.event.pull_request.head.ref }}"
               fork_repo="${{ github.event.pull_request.head.repo.full_name }}"
               workflow_url="https://github.com/${fork_repo}/actions/workflows/astyle-format.yml"
               direct_link="${workflow_url}?branch=${branch}"
-              
-              # 使用数组构建消息
+
+              # 使用数组存储多行消息
               message_lines=(
                 "👋 你好！感谢你的贡献。为了保持代码风格统一，请在你的仓库中运行代码格式化工作流："
                 ""
                 "Hello! Thank you for your contribution. To maintain code style consistency, please run the code formatting workflow in your repository:"
                 ""
                 "**步骤 / Steps:**"
-                "1. 📋 **前往你的仓库 Actions 页面** / Go to your repository Actions page: [点击这里]($direct_link)"
-                "2. ⚡ **运行格式化工作流** / Run the format workflow: Select \"Code Format with Astyle\" on the left"
-                "3. 🚀 **点击 \"Run workflow\"** / Click \"Run workflow\": Use default parameters or adjust as needed"
-                "4. ⏳ **等待完成** / Wait for completion: The formatted code will be automatically pushed to your branch"
+                "1. 📋 前往你的仓库 Actions 页面 / Go to your repository Actions page: [点击这里](${direct_link})"
+                "2. ⚡ 运行格式化工作流 / Run the format workflow: Select \"Code Format with Astyle\" on the left"
+                "3. 🚀 点击 \"Run workflow\" / Click \"Run workflow\": Use default parameters or adjust as needed"
+                "4. ⏳ 等待完成 / Wait for completion: The formatted code will be automatically pushed to your branch"
                 ""
-                "**直达链接** / Direct link: [运行格式化工作流 / Run Format Workflow]($direct_link)"
+                "**直达链接 / Direct link:** [运行格式化工作流 / Run Format Workflow](${direct_link})"
                 ""
-                "格式化完成后，commit 会自动推送到你的 \`$branch\` 分支，PR 会自动更新。"
-                "After formatting, commits will be automatically pushed to your \`$branch\` branch and the PR will update automatically."
+                "格式化完成后，commit 会自动推送到你的 \`${branch}\` 分支，PR 会自动更新。"
+                "After formatting, commits will be automatically pushed to your \`${branch}\` branch and the PR will update automatically."
               )
-              
-              # 合并数组为多行字符串
+
+              # 拼接数组为多行字符串
               message=$(printf "%s\n" "${message_lines[@]}")
-              
-              # 调试输出消息内容
+
               echo "Message content:"
               echo "$message"
-              
-              # 使用GitHub API添加评论
+
               response=$(curl -s -w "\n%{http_code}" \
                 -X POST \
                 -H "Accept: application/vnd.github.v3+json" \
                 -H "Authorization: Bearer $GITHUB_TOKEN" \
                 "https://api.github.com/repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" \
                 -d "{\"body\": $(echo "$message" | jq -Rs .)}")
-              
+
               http_code=$(echo "$response" | tail -n1)
               response_body=$(echo "$response" | sed '$d')
-              
+
               if [ "$http_code" -eq 201 ]; then
                 echo "Format notification comment added successfully"
                 echo "Comment URL: $(echo "$response_body" | jq -r '.html_url')"
