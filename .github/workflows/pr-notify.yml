@@ -1,29 +1,54 @@
 name: PR Format Notification
 on:
   pull_request:
-    types: [opened, reopened]
+    types: [opened, synchronize]
 
 jobs:
   notify-format:
-    if: github.repository == 'kurisaW/code-format'
     runs-on: ubuntu-latest
     permissions:
-      contents: write
-    
+      pull-requests: write
+      contents: read
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check if first commit in PR
+        id: check_first_commit
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: commits } = await github.rest.pulls.listCommits({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.payload.pull_request.number
+            });
+            
+            // 如果PR中只有1个commit，说明是第一笔提交
+            const isFirstCommit = commits.length === 1;
+            
+            // 如果是synchronize事件（新的commit推送），但commit数大于1，则不触发
+            const shouldRun = context.payload.action === 'opened' || 
+                             (context.payload.action === 'synchronize' && isFirstCommit);
+            
+            return shouldRun;
+
       - name: Create format notification
+        if: steps.check_first_commit.outputs.result == 'true'
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            // 获取PR信息
-            const forkRepo = '${{ github.event.pull_request.head.repo.full_name }}';
-            const branch = '${{ github.event.pull_request.head.ref }}';
+            const { repo, owner } = context.repo;
+            const prNumber = context.payload.pull_request.number;
+            const branch = context.payload.pull_request.head.ref;
+            const forkRepo = context.payload.pull_request.head.repo.full_name;
             
-            // 生成格式化工作流链接
             const workflowUrl = `https://github.com/${forkRepo}/actions/workflows/astyle-format.yml`;
             const directLink = `${workflowUrl}?branch=${encodeURIComponent(branch)}`;
-            
+
             // 创建评论消息
             const message = [
               '👋 你好！感谢你的贡献。为了保持代码风格统一，请在你的仓库中运行代码格式化工作流：',
@@ -42,16 +67,10 @@ jobs:
               'After formatting, commits will be automatically pushed to your `' + branch + '` branch and the PR will update automatically.'
             ].join('\n');
 
-            try {
-              // 创建评论
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.issue.number,
-                body: message
-              });
-              
-              console.log('✅ Format notification comment created');
-            } catch (error) {
-              console.log('❌ Failed to create comment:', error.message);
-            }
+            // 添加评论到PR
+            await github.rest.issues.createComment({
+              owner: owner,
+              repo: repo,
+              issue_number: prNumber,
+              body: message
+            });
