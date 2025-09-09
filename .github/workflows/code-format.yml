@@ -1,63 +1,104 @@
-name: Notify Contributor to Run Astyle Format in Their Fork
+name: PR Format Notify
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
-  issue_comment:
-    types: [created]
+    types: [opened, synchronize, edited]
 
 jobs:
-  notify-format:
-    if: |
-      (github.event_name == 'pull_request') ||
-      (github.event_name == 'issue_comment' &&
-       github.event.issue.pull_request &&
-       contains(github.event.comment.body, '/run-astyle-format'))
+  notify-formatting:
     runs-on: ubuntu-latest
     steps:
-    - name: Notify contributor to run format workflow in their fork
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: |
-        PR_REPO="${{ github.event.pull_request.head.repo.full_name }}"
-        MAIN_REPO="${{ github.repository }}"
-        PR_BRANCH="${{ github.event.pull_request.head.ref }}"
-        PR_NUMBER="${{ github.event.pull_request.number }}"
-        ACTIONS_URL="https://github.com/${PR_REPO}/actions"
-        UNIQUE_TAG="<!-- ASTYLE_FORMAT_FORK_NOTICE -->"
-        
-        # 解析排除参数
-        EXCLUDE=""
-        if [ "${{ github.event_name }}" = "issue_comment" ]; then
-          COMMENT_BODY="${{ github.event.comment.body }}"
-          if echo "$COMMENT_BODY" | grep -q "exclude="; then
-            EXCLUDE=$(echo "$COMMENT_BODY" | sed -n 's/.*exclude=\([^ ]*\).*/\1/p')
-          fi
-        fi
+      - name: Get PR info
+        id: prinfo
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            // Only notify for PRs from forks
+            if (pr.head.repo.full_name === pr.base.repo.full_name) {
+              core.setOutput("isFork", "false");
+              return;
+            }
+            core.setOutput("isFork", "true");
+            core.setOutput("prNumber", pr.number);
+            core.setOutput("forkRepo", pr.head.repo.full_name);
+            core.setOutput("branch", pr.head.ref);
 
-        EXCLUDE_TEXT=""
-        if [ -n "$EXCLUDE" ]; then
-          EXCLUDE_TEXT="\n\n**排除文件或目录**: \`${EXCLUDE}\`"
-        fi
+      - name: Get exclude from PR comments (if any)
+        id: exclude
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prNumber = ${{ steps.prinfo.outputs.prNumber }};
+            // Get all comments on the PR
+            const comments = await github.rest.issues.listComments({
+              ...context.repo,
+              issue_number: prNumber,
+            });
+            let exclude = "";
+            for (const comment of comments.data) {
+              const match = comment.body.match(/\/run-astyle-format\s+exclude=([^\s]+)/);
+              if (match) {
+                exclude = match[1];
+                break;
+              }
+            }
+            core.setOutput("exclude", exclude);
 
-        # 通知内容（引导到自己的仓库Actions页面，显示分支和排除信息）
-        PROMPT="⚠️ 本PR来自fork仓库（${PR_REPO}），请在你的仓库 Actions 页面 [点击此处运行 Astyle 格式化工作流](${ACTIONS_URL})，格式化完成后请将格式化 commit push 到分支 \`${PR_BRANCH}\`。${EXCLUDE_TEXT}\n\n你也可以在评论区手动输入 \`/run-astyle-format\` 触发此通知。\n${UNIQUE_TAG}"
+      - name: Prepare notification comment
+        id: content
+        run: |
+          FORK_REPO="${{ steps.prinfo.outputs.forkRepo }}"
+          BRANCH="${{ steps.prinfo.outputs.branch }}"
+          EXCLUDE="${{ steps.exclude.outputs.exclude }}"
+          COMMENT="⚠️ 本PR来自 fork 仓库（${FORK_REPO}），请在你的仓库 Actions 页面点击运行格式化工作流，格式化完成后请将格式化 commit push 到分支 \`${BRANCH}\`。
+          最新格式化流程：[点击跳转](https://github.com/${FORK_REPO}/actions)"
+                    if [ -n "$EXCLUDE" ]; then
+                      COMMENT="$COMMENT
 
-        # 获取已有评论
-        COMMENTS_API="https://api.github.com/repos/${MAIN_REPO}/issues/${PR_NUMBER}/comments"
-        COMMENTS=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json" $COMMENTS_API)
-        FIRST_COMMENT_ID=$(echo "$COMMENTS" | jq ".[] | select(.body | contains(\"$UNIQUE_TAG\")) | .id" | head -n1)
-        if [ -n "$FIRST_COMMENT_ID" ]; then
-          # 覆盖已有评论
-          UPDATE_API="https://api.github.com/repos/${MAIN_REPO}/issues/comments/${FIRST_COMMENT_ID}"
-          curl -s -X PATCH -H "Authorization: Bearer $GITHUB_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            $UPDATE_API \
-            -d "$(jq -n --arg body "$PROMPT" '{"body":$body}')"
-        else
-          # 发布新评论
-          curl -s -X POST -H "Authorization: Bearer $GITHUB_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            "$COMMENTS_API" \
-            -d "$(jq -n --arg body "$PROMPT" '{"body":$body}')"
-        fi
+          **排除项**: \`${EXCLUDE}\`"
+                    fi
+                    # 使用 printf 和 heredoc 防止格式错乱
+                    {
+                      echo "comment<<EOF"
+                      printf "%s\n" "$COMMENT"
+                      echo "EOF"
+                    } >> $GITHUB_OUTPUT
+
+      - name: Find existing notification comment
+        id: find_comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prNumber = ${{ steps.prinfo.outputs.prNumber }};
+            const comments = await github.rest.issues.listComments({
+              ...context.repo,
+              issue_number: prNumber,
+            });
+            // Find the most recent notification comment (starts with ⚠️)
+            let notifyComment = comments.data.find(c => c.body.startsWith("⚠️ 本PR来自 fork 仓库"));
+            core.setOutput("commentId", notifyComment ? notifyComment.id : "");
+
+      - name: Create or update notification comment
+        if: steps.prinfo.outputs.isFork == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prNumber = ${{ steps.prinfo.outputs.prNumber }};
+            const commentId = ${{ steps.find_comment.outputs.commentId }};
+            const body = process.env.COMMENT;
+            if (commentId) {
+              await github.rest.issues.updateComment({
+                ...context.repo,
+                comment_id: commentId,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                ...context.repo,
+                issue_number: prNumber,
+                body,
+              });
+            }
+        env:
+          COMMENT: ${{ steps.content.outputs.comment }}
