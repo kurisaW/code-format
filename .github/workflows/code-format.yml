@@ -47,23 +47,18 @@ jobs:
 
       - name: Prepare notification comment
         id: content
-        run: |
-          FORK_REPO="${{ steps.prinfo.outputs.forkRepo }}"
-          BRANCH="${{ steps.prinfo.outputs.branch }}"
-          EXCLUDE="${{ steps.exclude.outputs.exclude }}"
-          COMMENT="⚠️ 本PR来自 fork 仓库（${FORK_REPO}），请在你的仓库 Actions 页面点击运行格式化工作流，格式化完成后请将格式化 commit push 到分支 \`${BRANCH}\`。
-          最新格式化流程：[点击跳转](https://github.com/${FORK_REPO}/actions)"
-                    if [ -n "$EXCLUDE" ]; then
-                      COMMENT="$COMMENT
-
-          **排除项**: \`${EXCLUDE}\`"
-                    fi
-                    # 使用 printf 和 heredoc 防止格式错乱
-                    {
-                      echo "comment<<EOF"
-                      printf "%s\n" "$COMMENT"
-                      echo "EOF"
-                    } >> $GITHUB_OUTPUT
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const forkRepo = '${{ steps.prinfo.outputs.forkRepo }}'
+            const branch = '${{ steps.prinfo.outputs.branch }}'
+            const exclude = '${{ steps.exclude.outputs.exclude }}'
+            let comment = `⚠️ 本PR来自 fork 仓库（${forkRepo}），请在你的仓库 Actions 页面点击运行格式化工作流，格式化完成后请将格式化 commit push 到分支 \`${branch}\`。
+      最新格式化流程：[点击跳转](https://github.com/${forkRepo}/actions)`
+            if (exclude) {
+              comment += `\n\n**排除项**: \`${exclude}\``
+            }
+            core.setOutput('comment', comment)
 
       - name: Find existing notification comment
         id: find_comment
