@@ -5,6 +5,7 @@ on:
 
 jobs:
   notify-format:
+    if: github.repository == 'kurisaW/code-format'
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
