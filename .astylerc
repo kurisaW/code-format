@@ -1,0 +1,42 @@
+# 基本风格
+--style=allman
+
+# 缩进设置
+--indent=spaces=4
+--indent-classes
+--indent-switches
+--indent-cases
+--indent-preproc-define
+--indent-col1-comments
+--indent-after-parens
+
+# 括号设置
+--attach-namespaces
+--attach-classes
+--attach-inlines
+--break-closing-brackets
+--break-one-line-headers
+--add-brackets
+
+# 空格和填充
+--pad-oper
+--pad-header
+--pad-comma
+--pad-first-paren-out
+--unpad-paren
+
+# 指针和对齐
+--align-pointer=type
+--align-reference=type
+
+# 行长度和换行
+--max-code-length=120
+--max-instatement-indent=40
+
+# 其他格式
+--convert-tabs
+--suffix=none
+
+# 输出控制
+--verbose
+--formatted
