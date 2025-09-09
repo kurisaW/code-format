@@ -28,9 +28,10 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const prNumber = `${{ steps.prinfo.outputs.prNumber }}`
+            const prNumber = Number('${{ steps.prinfo.outputs.prNumber }}')
             const comments = await github.rest.issues.listComments({
-              ...context.repo,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
               issue_number: prNumber,
             })
             let exclude = ""
