@@ -15,18 +15,21 @@ jobs:
   format-code:
     name: Format Code with Astyle
     runs-on: ubuntu-latest
-    # 移除条件判断，让任务在任何情况下都能运行
-    # if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
 
     steps:
       # 步骤 1: 检出代码 - 修复 ref 配置
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          # 动态设置 ref，根据事件类型不同使用不同的引用
-          ref: ${{ github.event.pull_request.head.ref || github.ref }}
+          ref: |
+            ${{ 
+              (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 
+              format('origin/{0}-{1}', github.event.pull_request.head.user.login, github.event.pull_request.head.ref) || 
+              (github.event_name == 'pull_request' && github.event.pull_request.head.ref) || 
+              github.ref 
+            }}
           fetch-depth: 0
-          # 必须给写权限才能推送更改
           token: ${{ secrets.GITHUB_TOKEN }}
 
       # 步骤 2: 安装 Astyle 和 jq
