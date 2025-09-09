@@ -1,185 +1,48 @@
-name: Code Formatting with Astyle
+name: Astyle Format PR
 
 on:
   workflow_dispatch:
-    inputs:
-      exclude-paths:
-        description: 'Comma-separated paths to exclude from formatting (e.g., "src/legacy,test/**")'
-        required: false
-        default: ''
-  pull_request:
-    branches: [ main, master ]
-    types: [opened, synchronize, reopened, ready_for_review]
+  issue_comment:
+    types: [created]
 
 jobs:
-  format-code:
-    name: Format Code with Astyle
+  astyle-format:
+    if: |
+      (github.event_name == 'workflow_dispatch') ||
+      (github.event_name == 'issue_comment' &&
+       github.event.issue.pull_request &&
+       contains(github.event.comment.body, '/run-astyle-format'))
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
 
     steps:
-      # 步骤 1: 检出 PR head commit (使用 SHA 避免 fork ref 问题)
-      - name: Checkout PR head
-        if: github.event_name == 'pull_request'
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}  # 如果 fork push 失败，替换为 secrets.PAT_TOKEN (创建 PAT with repo write permissions)
+    - name: Checkout PR branch
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ github.event.pull_request.head.ref || github.event.issue.pull_request.head.ref }}
 
-      # Fallback for non-PR events (e.g., workflow_dispatch)
-      - name: Checkout default branch
-        if: github.event_name != 'pull_request'
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.ref_name }}
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+    - name: Set up Astyle
+      run: sudo apt-get update && sudo apt-get install -y astyle
 
-      # 创建分支上下文 (从 SHA 检出后，创建分支以支持 push)
-      - name: Create branch from SHA
-        if: github.event_name == 'pull_request'
-        run: |
-          BRANCH_NAME="${{ github.head_ref }}"
-          USER_LOGIN="${{ github.event.pull_request.head.user.login }}"
-          if [[ "${{ github.event.pull_request.head.repo.full_name }}" != "${{ github.repository }}" ]]; then
-            if [[ ! "$BRANCH_NAME" == "$USER_LOGIN-"* ]]; then
-              BRANCH_NAME="${USER_LOGIN}-${BRANCH_NAME}"
-            fi
-          fi
-          git checkout -b "$BRANCH_NAME" ${{ github.event.pull_request.head.sha }}
+    - name: Run Astyle
+      run: |
+        find . \( -name "*.c" -o -name "*.h" -o -name "*.cpp" -o -name "*.hpp" \) -exec astyle --options=.astylerc {} \;
 
-      # 步骤 2: 安装 Astyle 和 jq
-      - name: Setup Astyle and jq
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y astyle jq
+    - name: Commit and push changes
+      run: |
+        git config --local user.name "github-actions[bot]"
+        git config --local user.email "github-actions[bot]@users.noreply.github.com"
+        git add .
+        git diff --cached --quiet || git commit -m "Apply Astyle formatting"
+        git push
 
-      # 步骤 3: 确定需要格式化的文件列表 (针对 PR 只处理变化文件)
-      - name: Find files to format (excluding specified paths)
-        id: find-files
-        run: |
-          # 根据事件类型获取排除路径
-          EXCLUDE_PATHS_STR=""
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            EXCLUDE_PATHS_STR="${{ github.event.inputs.exclude-paths }}"
-          else
-            # 对于 PR 事件，可以使用默认值或从其他地方获取
-            EXCLUDE_PATHS_STR=""
-          fi
-
-          echo "Exclude paths: $EXCLUDE_PATHS_STR"
-          
-          # 构建 find 命令的排除参数
-          EXCLUDE_CLAUSES=""
-          if [[ -n "$EXCLUDE_PATHS_STR" ]]; then
-            IFS=',' read -ra EXCLUDE_PATHS <<< "$EXCLUDE_PATHS_STR"
-            for path in "${EXCLUDE_PATHS[@]}"; do
-              cleaned_path=$(echo "$path" | xargs)
-              if [[ -n "$cleaned_path" ]]; then
-                EXCLUDE_CLAUSES="$EXCLUDE_CLAUSES -not -path \"./$cleaned_path\""
-              fi
-            done
-          fi
-
-          echo "Exclude clauses: $EXCLUDE_CLAUSES"
-          
-          # 查找需要格式化的文件 (针对 PR 只处理变化文件)
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            git fetch origin ${{ github.base_ref }}
-            FILE_LIST=$(git diff --name-only origin/${{ github.base_ref }} | grep -E '\.(c|cpp|h|hpp)$' | grep -vE "(/\.git/|/build/|/node_modules/)" || true)
-          else
-            FILE_LIST=$(find . -name "*.c" -o -name "*.cpp" -o -name "*.h" -o -name "*.hpp" $EXCLUDE_CLAUSES | grep -vE "(/\.git/|/build/|/node_modules/)" || true)
-          fi
-          
-          if [[ -z "$FILE_LIST" ]]; then
-            echo "No files found to format."
-            echo "files=[]" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-          
-          # 转换为 JSON 数组
-          JSON_LIST=$(echo "$FILE_LIST" | jq -R -s -c 'split("\n") | map(select(. != "" and . != "."))')
-          echo "files=$JSON_LIST" >> $GITHUB_OUTPUT
-          echo "Found $(echo "$FILE_LIST" | wc -l) files to format"
-
-      # 步骤 4: 运行 Astyle 格式化
-      - name: Run Astyle formatting
-        run: |
-          files_json='${{ steps.find-files.outputs.files }}'
-          if [[ "$files_json" == "[]" ]]; then
-            echo "No files to format."
-            exit 0
-          fi
-          
-          # 转换为文件数组
-          files_array=$(echo '${{ steps.find-files.outputs.files }}' | jq -r '.[]')
-          echo "Files to format:"
-          echo "$files_array"
-          
-          if [[ -z "$files_array" ]]; then
-            echo "No files to format."
-            exit 0
-          fi
-
-          # 使用 .astylerc 配置文件格式化每个文件
-          for file in $files_array; do
-            if [[ -f "$file" ]]; then
-              echo "Formatting: $file"
-              astyle --options=".astylerc" "$file" || true
-            fi
-          done
-
-      # 步骤 5: 检查是否有文件被更改，并提交
-      - name: Check for changes and commit
-        id: check-and-commit
-        run: |
-          # 检查是否有更改
-          if [[ -z $(git status --porcelain) ]]; then
-            echo "No changes to commit."
-            echo "changes_detected=false" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-
-          echo "Changes detected:"
-          git diff --name-only
-          git diff
-
-          # 配置 Git 用户
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-
-          # 获取当前分支名 (处理 fork)
-          BRANCH_NAME="${{ github.head_ref || github.ref_name }}"
-          if [[ "${{ github.event.pull_request.head.repo.full_name }}" != "${{ github.repository }}" ]]; then
-            USER_LOGIN="${{ github.event.pull_request.head.user.login }}"
-            if [[ ! "$BRANCH_NAME" == "$USER_LOGIN-"* ]]; then
-              BRANCH_NAME="${USER_LOGIN}-${BRANCH_NAME}"
-            fi
-          fi
-
-          echo "On branch: $BRANCH_NAME"
-
-          # 创建提交
-          git add -A
-          git commit -m "style: apply automatic code formatting with astyle [skip ci]"
-
-          # 推送更改
-          git push origin HEAD:"$BRANCH_NAME"
-
-          echo "changes_detected=true" >> $GITHUB_OUTPUT
-          echo "✅ Changes committed and pushed"
-
-      # 步骤 6: 在 PR 上添加评论通知
-      - name: Comment on PR
-        if: steps.check-and-commit.outputs.changes_detected == 'true' && github.event_name == 'pull_request'
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: '🤖 Automated code formatting has been applied to this PR. The changes have been committed to the branch.\n\nPlease review the formatting changes.'
-            })
+    - name: Comment PR with a link to workflow run
+      if: github.event_name == 'issue_comment'
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        pr_url="${{ github.event.issue.pull_request.url }}"
+        run_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        curl -s -X POST -H "Authorization: Bearer $GITHUB_TOKEN" \
+          -H "Accept: application/vnd.github+json" \
+          "$pr_url/comments" \
+          -d "{\"body\": \"✅ Astyle格式化CI已运行：[查看详情]($run_url)\"}"
