@@ -4,6 +4,8 @@ on:
   workflow_dispatch:
   issue_comment:
     types: [created]
+  pull_request:
+    types: [opened, synchronize, reopened]
 
 jobs:
   astyle-format:
@@ -11,14 +13,17 @@ jobs:
       (github.event_name == 'workflow_dispatch') ||
       (github.event_name == 'issue_comment' &&
        github.event.issue.pull_request &&
-       contains(github.event.comment.body, '/run-astyle-format'))
+       contains(github.event.comment.body, '/run-astyle-format')) ||
+      (github.event_name == 'pull_request')
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout PR branch
+    - name: Checkout PR branch (fork or main)
       uses: actions/checkout@v4
       with:
-        ref: ${{ github.event.pull_request.head.ref || github.event.issue.pull_request.head.ref }}
+        repository: ${{ github.event.pull_request.head.repo.full_name }}
+        ref: ${{ github.event.pull_request.head.ref }}
+        token: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Set up Astyle
       run: sudo apt-get update && sudo apt-get install -y astyle
@@ -27,13 +32,17 @@ jobs:
       run: |
         find . \( -name "*.c" -o -name "*.h" -o -name "*.cpp" -o -name "*.hpp" \) -exec astyle --options=.astylerc {} \;
 
-    - name: Commit and push changes
+    - name: Commit and push changes if any
       run: |
-        git config --local user.name "github-actions[bot]"
-        git config --local user.email "github-actions[bot]@users.noreply.github.com"
-        git add .
-        git diff --cached --quiet || git commit -m "Apply Astyle formatting"
-        git push
+        if [[ -n "$(git status --porcelain)" ]]; then
+          git config --local user.name "github-actions[bot]"
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git add .
+          git commit -m "Apply Astyle formatting"
+          git push
+        else
+          echo "No formatting changes to commit."
+        fi
 
     - name: Comment PR with a link to workflow run
       if: github.event_name == 'issue_comment'
