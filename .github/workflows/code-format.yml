@@ -13,87 +13,81 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const pr = context.payload.pull_request;
-            // Only notify for PRs from forks
+            const pr = context.payload.pull_request
             if (pr.head.repo.full_name === pr.base.repo.full_name) {
-              core.setOutput("isFork", "false");
-              return;
+              core.setOutput("isFork", "false")
+              return
             }
-            core.setOutput("isFork", "true");
-            core.setOutput("prNumber", pr.number);
-            core.setOutput("forkRepo", pr.head.repo.full_name);
-            core.setOutput("branch", pr.head.ref);
+            core.setOutput("isFork", "true")
+            core.setOutput("prNumber", pr.number)
+            core.setOutput("forkRepo", pr.head.repo.full_name)
+            core.setOutput("branch", pr.head.ref)
 
       - name: Get exclude from PR comments (if any)
         id: exclude
         uses: actions/github-script@v7
         with:
           script: |
-            const prNumber = ${{ steps.prinfo.outputs.prNumber }};
-            // Get all comments on the PR
+            const prNumber = `${{ steps.prinfo.outputs.prNumber }}`
             const comments = await github.rest.issues.listComments({
               ...context.repo,
               issue_number: prNumber,
-            });
-            let exclude = "";
+            })
+            let exclude = ""
             for (const comment of comments.data) {
-              const match = comment.body.match(/\/run-astyle-format\s+exclude=([^\s]+)/);
+              const match = comment.body.match(/\/run-astyle-format\s+exclude=([^\s]+)/)
               if (match) {
-                exclude = match[1];
-                break;
+                exclude = match[1]
+                break
               }
             }
-            core.setOutput("exclude", exclude);
+            core.setOutput("exclude", exclude)
 
       - name: Prepare notification comment
         id: content
         uses: actions/github-script@v7
         with:
           script: |
-            const forkRepo = '${{ steps.prinfo.outputs.forkRepo }}'
-            const branch = '${{ steps.prinfo.outputs.branch }}'
-            const exclude = '${{ steps.exclude.outputs.exclude }}'
-            let comment = `⚠️ 本PR来自 fork 仓库（${forkRepo}），请在你的仓库 Actions 页面点击运行格式化工作流，格式化完成后请将格式化 commit push 到分支 \`${branch}\`。
-      最新格式化流程：[点击跳转](https://github.com/${forkRepo}/actions)`
+            const forkRepo = `${{ steps.prinfo.outputs.forkRepo }}`
+            const branch = `${{ steps.prinfo.outputs.branch }}`
+            const exclude = `${{ steps.exclude.outputs.exclude }}`
+            let comment = `⚠️ 本PR来自 fork 仓库（${forkRepo}），请在你的仓库 Actions 页面点击运行格式化工作流，格式化完成后请将格式化 commit push 到分支 \`${branch}\`。\n最新格式化流程：[点击跳转](https://github.com/${forkRepo}/actions)`
             if (exclude) {
               comment += `\n\n**排除项**: \`${exclude}\``
             }
-            core.setOutput('comment', comment)
+            core.setOutput("comment", comment)
 
       - name: Find existing notification comment
         id: find_comment
         uses: actions/github-script@v7
         with:
           script: |
-            const prNumber = ${{ steps.prinfo.outputs.prNumber }};
+            const prNumber = `${{ steps.prinfo.outputs.prNumber }}`
             const comments = await github.rest.issues.listComments({
               ...context.repo,
               issue_number: prNumber,
-            });
-            // Find the most recent notification comment (starts with ⚠️)
-            let notifyComment = comments.data.find(c => c.body.startsWith("⚠️ 本PR来自 fork 仓库"));
-            core.setOutput("commentId", notifyComment ? notifyComment.id : "");
+            })
+            let notifyComment = comments.data.find(c => c.body.startsWith("⚠️ 本PR来自 fork 仓库"))
+            core.setOutput("commentId", notifyComment ? notifyComment.id : "")
 
       - name: Create or update notification comment
-        if: steps.prinfo.outputs.isFork == 'true'
+        if: ${{ steps.prinfo.outputs.isFork == 'true' }}
         uses: actions/github-script@v7
         with:
           script: |
-            const prNumber = ${{ steps.prinfo.outputs.prNumber }};
-            const commentId = ${{ steps.find_comment.outputs.commentId }};
-            const body = process.env.COMMENT;
+            const prNumber = `${{ steps.prinfo.outputs.prNumber }}`
+            const commentId = `${{ steps.find_comment.outputs.commentId }}`
+            const body = `${{ steps.content.outputs.comment }}`
             if (commentId) {
               await github.rest.issues.updateComment({
                 ...context.repo,
                 comment_id: commentId,
                 body,
-              });
+              })
             } else {
               await github.rest.issues.createComment({
                 ...context.repo,
                 issue_number: prNumber,
                 body,
-              });
+              })
             }
-        env:
-          COMMENT: ${{ steps.content.outputs.comment }}
