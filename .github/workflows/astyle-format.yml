@@ -10,7 +10,7 @@ on:
       branch:
         description: "要格式化的分支 | Branch to format"
         required: true
-        default: 'main'
+        default: ''
 
 permissions:
   contents: write
