@@ -5,59 +5,26 @@ on:
 
 jobs:
   notify-format:
-    if: |
-      github.repository == 'kurisaW/code-format'
+    if: github.repository == 'kurisaW/code-format'
     runs-on: ubuntu-latest
     permissions:
       issues: write
-      contents: read
     
     steps:
-      - name: Get PR information
-        id: pr-info
-        run: |
-          PR_NUMBER=${{ github.event.pull_request.number }}
-          FORK_REPO=${{ github.event.pull_request.head.repo.full_name }}
-          BRANCH=${{ github.event.pull_request.head.ref }}
-          PR_AUTHOR=${{ github.event.pull_request.user.login }}
-          
-          echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
-          echo "fork_repo=$FORK_REPO" >> $GITHUB_OUTPUT
-          echo "branch=$BRANCH" >> $GITHUB_OUTPUT
-          echo "pr_author=$PR_AUTHOR" >> $GITHUB_OUTPUT
-
-      - name: Check for existing notification
-        id: check-existing
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const { data: comments } = await github.rest.issues.listComments({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number
-            });
-            
-            const existingComment = comments.find(comment => 
-              comment.user.login === 'github-actions[bot]' &&
-              comment.body.includes('Please run the format workflow')
-            );
-            
-            core.setOutput('has_existing', !!existingComment);
-
       - name: Create format notification
-        if: steps.check-existing.outputs.has_existing != 'true'
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const forkRepo = '${{ steps.pr-info.outputs.fork_repo }}';
-            const branch = '${{ steps.pr-info.outputs.branch }}';
+            // 获取PR信息
+            const forkRepo = '${{ github.event.pull_request.head.repo.full_name }}';
+            const branch = '${{ github.event.pull_request.head.ref }}';
             
-            const workflowUrl = 'https://github.com/' + forkRepo + '/actions/workflows/astyle-format.yml';
-            const actionsUrl = 'https://github.com/' + forkRepo + '/actions';
-            const directLink = workflowUrl + '?branch=' + encodeURIComponent(branch);
+            // 生成格式化工作流链接
+            const workflowUrl = `https://github.com/${forkRepo}/actions/workflows/astyle-format.yml`;
+            const directLink = `${workflowUrl}?branch=${encodeURIComponent(branch)}`;
             
+            // 创建评论消息
             const message = [
               '👋 你好！感谢你的贡献。为了保持代码风格统一，请在你的仓库中运行代码格式化工作流：',
               '',
@@ -74,7 +41,8 @@ jobs:
               '格式化完成后，commit 会自动推送到你的 `' + branch + '` 分支，PR 会自动更新。',
               'After formatting, commits will be automatically pushed to your `' + branch + '` branch and the PR will update automatically.'
             ].join('\n');
-            
+
+            // 创建评论
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -84,10 +52,19 @@ jobs:
             
             console.log('✅ Format notification comment created');
 
-      - name: Log completion
-        run: |
-          echo "Format notification process completed"
-          echo "PR Number: ${{ steps.pr-info.outputs.pr_number }}"
-          echo "Fork Repository: ${{ steps.pr-info.outputs.fork_repo }}"
-          echo "Branch: ${{ steps.pr-info.outputs.branch }}"
-          echo "Existing notification: ${{ steps.check-existing.outputs.has_existing }}"
+            const message = [
+              '👋 你好！感谢你的贡献。为了保持代码风格统一，请在你的仓库中运行代码格式化工作流：',
+              '',
+              'Hello! Thank you for your contribution. To maintain code style consistency, please run the code formatting workflow in your repository:',
+              '',
+              '**步骤 / Steps:**',
+              '1. 📋 **前往你的仓库 Actions 页面** / Go to your repository Actions page: [点击这里](' + actionsUrl + ')',
+              '2. ⚡ **运行格式化工作流** / Run the format workflow: Select "Code Format with Astyle" on the left',
+              '3. 🚀 **点击 "Run workflow"** / Click "Run workflow": Use default parameters or adjust as needed',
+              '4. ⏳ **等待完成** / Wait for completion: The formatted code will be automatically pushed to your branch',
+              '',
+              '**直达链接** / Direct link: [运行格式化工作流 / Run Format Workflow](' + directLink + ')',
+              '',
+              '格式化完成后，commit 会自动推送到你的 `' + branch + '` 分支，PR 会自动更新。',
+              'After formatting, commits will be automatically pushed to your `' + branch + '` branch and the PR will update automatically.'
+            ].join('\n');
