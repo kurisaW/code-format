@@ -1,6 +1,6 @@
 name: PR Format Notification
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, reopened]
 
 jobs:
@@ -10,7 +10,6 @@ jobs:
       github.repository == 'kurisaW/code-format'
     runs-on: ubuntu-latest
     permissions:
-      pull-requests: write
       issues: write
       contents: read
     
@@ -74,10 +73,7 @@ jobs:
               '**直达链接** / Direct link: [运行格式化工作流 / Run Format Workflow](' + directLink + ')',
               '',
               '格式化完成后，commit 会自动推送到你的 `' + branch + '` 分支，PR 会自动更新。',
-              'After formatting, commits will be automatically pushed to your `' + branch + '` branch and the PR will update automatically.',
-              '',
-              '> 💡 提示：此通知只在PR首次创建时显示一次',
-              '> 💡 Note: This notification only appears when the PR is first created'
+              'After formatting, commits will be automatically pushed to your `' + branch + '` branch and the PR will update automatically.'
             ].join('\n');
             
             await github.rest.issues.createComment({
