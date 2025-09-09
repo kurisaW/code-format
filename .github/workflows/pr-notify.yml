@@ -45,7 +45,7 @@ jobs:
               # 使用数组存储多行消息
               message_lines=(
                 "**👋 感谢您对RT-Thread的贡献！**"
-                "**👋 Thank you for your contribution to RT-Thread!**"
+                "**Thank you for your contribution to RT-Thread!**"
                 ""
                 "为确保遵循RT-Thread代码风格，请在你的仓库中运行代码格式化工作流："
                 "To ensure compliance with the RT-Thread code style, please run the code formatting workflow in your repository:"
@@ -55,10 +55,10 @@ jobs:
                 "1. 📋 前往仓库 **Actions 页面** / Go to the repository **Actions page** → [点击这里 / Click here](${direct_link})"
                 ""
                 "2. 🚀 点击 **Run workflow**（请设置需要排除的文件/目录以及需要需要格式化的分支）"
-                "2.    Click **Run workflow** (please configure the files/directories to exclude and the branch to format)"
+                "Click **Run workflow** (please configure the files/directories to exclude and the branch to format)"
                 ""
                 "3. ⏳ 等待工作流完成，格式化结果将自动推送至你的分支"
-                "3.    Wait for the workflow to complete; the formatted code will be automatically pushed to your branch"
+                "Wait for the workflow to complete; the formatted code will be automatically pushed to your branch"
                 ""
                 "**直达链接 / Direct link:**"
                 "👉 [运行格式化工作流 / Run Format Workflow](${direct_link})"
