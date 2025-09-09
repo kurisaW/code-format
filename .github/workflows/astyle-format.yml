@@ -4,11 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       exclude_patterns:
-        description: "排除文件/目录 (comma-separated)\n Files/Directories to exclude"
+        description: "排除文件/目录 (以逗号间隔)\n Files/Directories to exclude(comma-separated)"
         required: false
         default: ''
       branch:
-        description: "要格式化的分支\n Branch to format"
+        description: "要格式化的分支 \n Branch to format"
         required: true
         default: 'main'
 
