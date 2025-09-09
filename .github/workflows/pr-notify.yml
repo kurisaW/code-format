@@ -1,6 +1,6 @@
 name: PR Format Notification
 on:
-  pull_request_target:
+  pull_request:
     types: [opened, reopened]
 
 jobs:
@@ -8,7 +8,7 @@ jobs:
     if: github.repository == 'kurisaW/code-format'
     runs-on: ubuntu-latest
     permissions:
-      issues: write
+      contents: write
     
     steps:
       - name: Create format notification
@@ -42,12 +42,16 @@ jobs:
               'After formatting, commits will be automatically pushed to your `' + branch + '` branch and the PR will update automatically.'
             ].join('\n');
 
-            // 创建评论
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-              body: message
-            });
-            
-            console.log('✅ Format notification comment created');
+            try {
+              // 创建评论
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: message
+              });
+              
+              console.log('✅ Format notification comment created');
+            } catch (error) {
+              console.log('❌ Failed to create comment:', error.message);
+            }
