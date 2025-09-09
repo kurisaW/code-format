@@ -6,7 +6,6 @@ on:
 jobs:
   notify-format:
     if: |
-      github.event.pull_request.head.repo.fork == true &&
       github.repository == 'kurisaW/code-format'
     runs-on: ubuntu-latest
     permissions:
