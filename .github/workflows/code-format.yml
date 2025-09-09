@@ -4,8 +4,6 @@ on:
   workflow_dispatch:
   issue_comment:
     types: [created]
-  pull_request:
-    types: [opened, synchronize, reopened]
 
 jobs:
   astyle-format:
@@ -18,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout PR branch (fork or main)
+    - name: Checkout PR branch (fork)
       uses: actions/checkout@v4
       with:
         repository: ${{ github.event.pull_request.head.repo.full_name }}
