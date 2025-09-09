@@ -1,55 +1,63 @@
-name: Ask Contributor to Run Astyle Format in Their Fork
+name: Notify Contributor to Run Astyle Format in Their Fork
 
 on:
   pull_request:
     types: [opened, synchronize, reopened]
-  workflow_dispatch:
   issue_comment:
     types: [created]
 
 jobs:
-  astyle-format:
+  notify-format:
     if: |
       (github.event_name == 'pull_request') ||
-      (github.event_name == 'workflow_dispatch') ||
       (github.event_name == 'issue_comment' &&
        github.event.issue.pull_request &&
        contains(github.event.comment.body, '/run-astyle-format'))
     runs-on: ubuntu-latest
     steps:
-    - name: Detect fork PR and comment or update
+    - name: Notify contributor to run format workflow in their fork
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
         PR_REPO="${{ github.event.pull_request.head.repo.full_name }}"
         MAIN_REPO="${{ github.repository }}"
-        PR_USER="${{ github.event.pull_request.user.login }}"
         PR_BRANCH="${{ github.event.pull_request.head.ref }}"
-        ACTIONS_URL="https://github.com/${PR_REPO}/actions"
         PR_NUMBER="${{ github.event.pull_request.number }}"
-        WORKFLOW_URL="https://github.com/${MAIN_REPO}/actions/runs/${{ github.run_id }}"
+        ACTIONS_URL="https://github.com/${PR_REPO}/actions"
         UNIQUE_TAG="<!-- ASTYLE_FORMAT_FORK_NOTICE -->"
-        PROMPT="⚠️ PR 来自 fork 仓库（${PR_REPO}）。请前往你的仓库 Actions 页面 [运行 Astyle 格式化工作流](${ACTIONS_URL})，格式化完成后请将格式化 commit push 到分支 \`${PR_BRANCH}\`。\n\n最新格式化流程：[点击跳转](${WORKFLOW_URL})\n${UNIQUE_TAG}"
         
-        if [ "$PR_REPO" != "$MAIN_REPO" ]; then
-          # 获取所有评论
-          COMMENTS_API="https://api.github.com/repos/${MAIN_REPO}/issues/${PR_NUMBER}/comments"
-          COMMENTS=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json" $COMMENTS_API)
-          FIRST_COMMENT_ID=$(echo "$COMMENTS" | jq ".[] | select(.body | contains(\"$UNIQUE_TAG\")) | .id" | head -n1)
-          if [ -n "$FIRST_COMMENT_ID" ]; then
-            # 更新第一条提示评论
-            UPDATE_API="https://api.github.com/repos/${MAIN_REPO}/issues/comments/${FIRST_COMMENT_ID}"
-            curl -s -X PATCH -H "Authorization: Bearer $GITHUB_TOKEN" \
-              -H "Accept: application/vnd.github+json" \
-              $UPDATE_API \
-              -d "$(jq -n --arg body "$PROMPT" '{"body":$body}')"
-          else
-            # 发布新的提示评论
-            curl -s -X POST -H "Authorization: Bearer $GITHUB_TOKEN" \
-              -H "Accept: application/vnd.github+json" \
-              "$COMMENTS_API" \
-              -d "$(jq -n --arg body "$PROMPT" '{"body":$body}')"
+        # 解析排除参数
+        EXCLUDE=""
+        if [ "${{ github.event_name }}" = "issue_comment" ]; then
+          COMMENT_BODY="${{ github.event.comment.body }}"
+          if echo "$COMMENT_BODY" | grep -q "exclude="; then
+            EXCLUDE=$(echo "$COMMENT_BODY" | sed -n 's/.*exclude=\([^ ]*\).*/\1/p')
           fi
+        fi
+
+        EXCLUDE_TEXT=""
+        if [ -n "$EXCLUDE" ]; then
+          EXCLUDE_TEXT="\n\n**排除文件或目录**: \`${EXCLUDE}\`"
+        fi
+
+        # 通知内容（引导到自己的仓库Actions页面，显示分支和排除信息）
+        PROMPT="⚠️ 本PR来自fork仓库（${PR_REPO}），请在你的仓库 Actions 页面 [点击此处运行 Astyle 格式化工作流](${ACTIONS_URL})，格式化完成后请将格式化 commit push 到分支 \`${PR_BRANCH}\`。${EXCLUDE_TEXT}\n\n你也可以在评论区手动输入 \`/run-astyle-format\` 触发此通知。\n${UNIQUE_TAG}"
+
+        # 获取已有评论
+        COMMENTS_API="https://api.github.com/repos/${MAIN_REPO}/issues/${PR_NUMBER}/comments"
+        COMMENTS=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github+json" $COMMENTS_API)
+        FIRST_COMMENT_ID=$(echo "$COMMENTS" | jq ".[] | select(.body | contains(\"$UNIQUE_TAG\")) | .id" | head -n1)
+        if [ -n "$FIRST_COMMENT_ID" ]; then
+          # 覆盖已有评论
+          UPDATE_API="https://api.github.com/repos/${MAIN_REPO}/issues/comments/${FIRST_COMMENT_ID}"
+          curl -s -X PATCH -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            $UPDATE_API \
+            -d "$(jq -n --arg body "$PROMPT" '{"body":$body}')"
         else
-          echo "PR is not from a fork, no action needed."
+          # 发布新评论
+          curl -s -X POST -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "$COMMENTS_API" \
+            -d "$(jq -n --arg body "$PROMPT" '{"body":$body}')"
         fi
