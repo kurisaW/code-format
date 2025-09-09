@@ -12,21 +12,26 @@ on:
         required: true
         default: 'main'
 
+# 允许从上游仓库触发
+permissions:
+  contents: write
+  pull-requests: read
+
 jobs:
   format-code:
-  if: |
-    github.repository != 'kurisaW/code-format'
+    # 允许在fork仓库运行
+    if: |
+      github.event.pull_request.head.repo.fork == true ||
+      github.repository != 'kurisaW/code-format'
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: read
-
+    
     steps:
-      - name: Checkout code
+      - name: Checkout code with proper token
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.inputs.branch }}
           fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Astyle
         run: |
@@ -36,32 +41,24 @@ jobs:
       - name: Create exclude patterns
         run: |
           EXCLUDE_PATTERNS="${{ github.event.inputs.exclude_patterns }}"
-          EXCLUDE_ARGS=""
+          echo "EXCLUDE_PATTERNS=$EXCLUDE_PATTERNS" >> $GITHUB_ENV
+          echo "Exclude patterns: $EXCLUDE_PATTERNS"
+
+      - name: Format code with Astyle
+        run: |
+          # 使用find命令查找需要格式化的文件
+          FIND_CMD="find . -type f \( -name '*.cpp' -o -name '*.h' -o -name '*.c' -o -name '*.hpp' -o -name '*.cc' \)"
           
           if [ -n "$EXCLUDE_PATTERNS" ]; then
             IFS=',' read -ra PATTERNS <<< "$EXCLUDE_PATTERNS"
             for pattern in "${PATTERNS[@]}"; do
-              EXCLUDE_ARGS="$EXCLUDE_ARGS --exclude=\"$pattern\""
-            done
-          fi
-          
-          echo "EXCLUDE_ARGS=$EXCLUDE_ARGS" >> $GITHUB_ENV
-
-      - name: Format code with Astyle
-        run: |
-          # 查找所有需要格式化的文件
-          FIND_CMD="find . -name '*.cpp' -o -name '*.h' -o -name '*.c' -o -name '*.hpp' -o -name '*.cc'"
-          
-          if [ -n "$EXCLUDE_ARGS" ]; then
-            # 构建排除模式
-            IFS=',' read -ra PATTERNS <<< "${{ github.event.inputs.exclude_patterns }}"
-            for pattern in "${PATTERNS[@]}"; do
+              pattern=$(echo "$pattern" | xargs)  # 去除空格
               FIND_CMD="$FIND_CMD -not -path \"*/$pattern/*\" -not -name \"$pattern\""
             done
           fi
           
-          echo "Running: $FIND_CMD"
-          FILES=$(eval $FIND_CMD)
+          echo "Find command: $FIND_CMD"
+          FILES=$(eval $FIND_CMD 2>/dev/null || true)
           
           if [ -z "$FILES" ]; then
             echo "No files found to format"
@@ -71,17 +68,24 @@ jobs:
           echo "Files to format:"
           echo "$FILES"
           
-          # 使用astylerc配置文件进行格式化
+          # 检查是否有.astylerc文件
+          if [ ! -f ".astylerc" ]; then
+            echo "Error: .astylerc file not found!"
+            exit 1
+          fi
+          
+          # 格式化文件
           for file in $FILES; do
             if [ -f "$file" ]; then
               echo "Formatting $file"
-              astyle --options=.astylerc "$file"
+              astyle --options=.astylerc "$file" || true
             fi
           done
 
       - name: Check for changes
         id: changes
         run: |
+          git status
           if git diff --quiet; then
             echo "has_changes=false" >> $GITHUB_OUTPUT
             echo "No formatting changes needed"
@@ -97,9 +101,9 @@ jobs:
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
           
-          git add .
-          git commit -m "style: format code with astyle"
-          git push origin ${{ github.event.inputs.branch }}
+          git add -A
+          git commit -m "style: format code with astyle [skip ci]"
+          git push origin HEAD:${{ github.event.inputs.branch }}
           
           echo "✅ 代码格式化完成并已推送到分支 ${{ github.event.inputs.branch }}"
 
