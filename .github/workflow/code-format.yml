@@ -1,0 +1,108 @@
+on:
+  # 允许在 GitHub 界面上手动触发工作流，并可传递输入参数
+  workflow_dispatch:
+    inputs:
+      exclude-paths:
+        description: 'Comma-separated paths to exclude from formatting (e.g., "src/legacy,test/**")'
+        required: false
+        default: ''
+  # 可选：当有新的 PR 指向默认分支时触发，方便通知或后续手动操作
+  pull_request:
+    branches: [ main ] # 替换为你的默认分支名
+    types: [opened, synchronize]
+
+jobs:
+  format-code:
+    name: Format Code with Astyle
+    runs-on: ubuntu-latest
+    # 确保该任务仅在由 PR 触发或手动触发时运行
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+
+    steps:
+      # 步骤 1: 检出代码。关键：启用 push 权限并获取所有分支和历史记录。
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }} # 检出 PR 的源头提交
+          fetch-depth: 0 # 获取所有 Git 历史，这对正确 diff 和提交很重要
+
+      # 步骤 2: 安装 Astyle
+      - name: Setup Astyle
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y astyle
+
+      # 步骤 3: 确定需要格式化的文件列表（排除指定的路径）
+      - name: Find files to format (excluding specified paths)
+        id: find-files
+        run: |
+          # 构建 find 命令的排除参数
+          EXCLUDE_CLAUES=""
+          if [[ -n "${{ inputs.exclude-paths }}" ]]; then
+            IFS=',' read -ra EXCLUDE_PATHS <<< "${{ inputs.exclude-paths }}"
+            for path in "${EXCLUDE_PATHS[@]}"; do
+              # 清理路径中的空格，并为每个排除模式添加 -not -path 参数
+              cleaned_path=$(echo "$path" | xargs)
+              EXCLUDE_CLAUES="$EXCLUDE_CLAUES -not -path \"./$cleaned_path\""
+            done
+          fi
+
+          # 使用 find 命令搜索 .c 和 .cpp 文件，并应用排除规则
+          # 将文件列表转换为 JSON 字符串并将其设置为输出
+          FILE_LIST=$(find . -name "*.c" -o -name "*.cpp" $EXCLUDE_CLAUES | jq -R -s -c 'split("\n") | map(select(. != ""))')
+          echo "files=$FILE_LIST" >> $GITHUB_OUTPUT
+
+      # 步骤 4: 运行 Astyle 格式化
+      - name: Run Astyle formatting
+        run: |
+          files_array=$(echo '${{ steps.find-files.outputs.files }}' | jq -r '.[]')
+          if [[ -z "$files_array" ]]; then
+            echo "No files to format."
+            exit 0
+          fi
+
+          # 使用 .astylerc 配置文件
+          printf '%s\n' $files_array | xargs -I {} astyle \
+            --options=".astylerc" \
+            {} || true
+
+      # 步骤 5: 检查是否有文件被更改，并提交
+      - name: Check for changes and commit
+        id: check-and-commit
+        run: |
+          # 检查 Git 工作区是否有更改
+          if [[ -z $(git status --porcelain) ]]; then
+            echo "No changes to commit."
+            echo "changes_detected=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "Changes detected:"
+          git diff --name-only
+
+          # 配置 Git 用户
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+          # 创建提交
+          git add -A
+          git commit -m "style: apply automatic code formatting with astyle"
+
+          # 推送提交回 PR 分支
+          git push
+
+          echo "changes_detected=true" >> $GITHUB_OUTPUT
+
+      # 步骤 6: (可选) 在 PR 上添加评论通知
+      - name: Comment on PR
+        if: steps.check-and-commit.outputs.changes_detected == 'true' && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '🤖 Automated code formatting was applied to this PR. Please review the changes.'
+            })
