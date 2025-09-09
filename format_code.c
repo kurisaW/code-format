@@ -8,6 +8,8 @@
 //糟糕的注释      格式
   //缩进不一致的注释
 
+
+
 typedef struct{
 int id;char name[50];float score;}Student;
 
