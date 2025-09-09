@@ -4,8 +4,8 @@ on:
     types: [opened, synchronize]
 
 permissions:
-  pull-requests: write   # 仅允许写 PR 评论
-  contents: read         # 最小化权限
+  pull-requests: write
+  contents: read
 
 jobs:
   notify-format:
@@ -44,20 +44,27 @@ jobs:
 
               # 使用数组存储多行消息
               message_lines=(
-                "👋 你好！感谢你的贡献。为了保持代码风格统一，请在你的仓库中运行代码格式化工作流："
+                "**👋 感谢您对RT-Thread的贡献！**"
+                "**👋 Thank you for your contribution to RT-Thread!**"
                 ""
-                "Hello! Thank you for your contribution. To maintain code style consistency, please run the code formatting workflow in your repository:"
+                "为确保遵循RT-Thread代码风格，请在你的仓库中运行代码格式化工作流："
+                "To ensure compliance with the RT-Thread code style, please run the code formatting workflow in your repository:"
+                "---"
+                "### **步骤 / Steps**"
+                "1. 📋 前往仓库 **Actions 页面** → [点击这里 / Click here](${direct_link})"
+                "   📋 Go to the repository **Actions page** → [click here](${direct_link})"
                 ""
-                "**步骤 / Steps:**"
-                "1. 📋 前往你的仓库 Actions 页面 / Go to your repository Actions page: [点击这里](${direct_link})"
-                "2. ⚡ 运行格式化工作流 / Run the format workflow: Select \"Code Format with Astyle\" on the left"
-                "3. 🚀 点击 \"Run workflow\" / Click \"Run workflow\": Use default parameters or adjust as needed"
-                "4. ⏳ 等待完成 / Wait for completion: The formatted code will be automatically pushed to your branch"
+                "2. 🚀 点击 **Run workflow**（请设置需要排除的文件/目录以及需要需要格式化的分支）"
+                "2. 🚀 Click **Run workflow** (please configure the files/directories to exclude and the branch to format)"
                 ""
-                "**直达链接 / Direct link:** [运行格式化工作流 / Run Format Workflow](${direct_link})"
-                ""
-                "格式化完成后，commit 会自动推送到你的 \`${branch}\` 分支，PR 会自动更新。"
-                "After formatting, commits will be automatically pushed to your \`${branch}\` branch and the PR will update automatically."
+                "3. ⏳ 等待工作流完成，格式化结果将自动推送至你的分支"
+                "3. ⏳ Wait for the workflow to complete; the formatted code will be automatically pushed to your branch"
+                "---"
+                "**直达链接 / Direct link:**"
+                "👉 [运行格式化工作流 / Run Format Workflow](${direct_link})"
+                "---"
+                "格式化完成后，提交会自动推送至 \`\${branch}\` 分支，对应的 Pull Request 也会自动更新。"
+                "After formatting, commits will be automatically pushed to the \`\${branch}\` branch, and the corresponding Pull Request will update automatically."
               )
 
               # 拼接数组为多行字符串
