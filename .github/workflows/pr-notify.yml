@@ -42,7 +42,7 @@ jobs:
               # 构建工作流链接
               branch="${{ github.event.pull_request.head.ref }}"
               fork_repo="${{ github.event.pull_request.head.repo.full_name }}"
-              workflow_url="https://github.com/${fork_repo}/actions/workflows/astyle-format.yml"
+              workflow_url="https://github.com/${fork_repo}/actions/workflows/clang-format.yml"
               direct_link="${workflow_url}?branch=${branch}"
 
               # 使用数组存储多行消息
