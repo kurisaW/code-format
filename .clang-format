@@ -1,5 +1,5 @@
 ---
-Language: ObjC
+Language: C
 BasedOnStyle: LLVM
 
 # 缩进与宽度
