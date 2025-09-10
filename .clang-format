@@ -46,13 +46,13 @@ AlignTrailingComments:
   OverEmptyLines: 1
 AllowAllArgumentsOnNextLine: false
 AllowAllParametersOfDeclarationOnNextLine: false
-AllowShortBlocksOnASingleLine: Always
+AllowShortBlocksOnASingleLine: false
 AllowShortCaseLabelsOnASingleLine: false
 AllowShortEnumsOnASingleLine: false
 AllowShortFunctionsOnASingleLine: None
-AllowShortIfStatementsOnASingleLine: WithoutElse
+AllowShortIfStatementsOnASingleLine: false
 AllowShortLambdasOnASingleLine: All
-AllowShortLoopsOnASingleLine: true
+AllowShortLoopsOnASingleLine: false
 AlwaysBreakAfterDefinitionReturnType: None
 AlwaysBreakAfterReturnType: None
 AlwaysBreakBeforeMultilineStrings: false
