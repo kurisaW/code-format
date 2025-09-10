@@ -39,34 +39,28 @@ int global_var = 0;
 
 void badly_formatted_function(int param1, int *param2, char **param3)
 {
-    if (param1 > 0) {
+    if (param1 > 0)
+    {
         *param2 = param1 * 2;
-        if (DEBUG) {
-            printf("Debug: param1=%d\n", param1);
-        }
+        if (DEBUG) { printf("Debug: param1=%d\n", param1); }
     }
-    else {
-        *param2 = 0;
-    }
+    else { *param2 = 0; }
 }
 
 
 int *create_array(int size)
 {
     int *arr = (int *)malloc(size * sizeof(int));
-    if (arr == NULL) {
-        return NULL;
-    }
-    for (int i = 0; i < size; i++) {
-        arr[i] = i * i;
-    }
+    if (arr == NULL) { return NULL; }
+    for (int i = 0; i < size; i++) { arr[i] = i * i; }
     return arr;
 }
 
 
 void process_data(int *data, int length)
 {
-    switch (length) {
+    switch (length)
+    {
     case 1:
         printf("Single element: %d\n", data[0]);
         break;
@@ -75,9 +69,7 @@ void process_data(int *data, int length)
         break;
     default:
         printf("Multiple elements: ");
-        for (int i = 0; i < length; i++) {
-            printf("%d ", data[i]);
-        }
+        for (int i = 0; i < length; i++) { printf("%d ", data[i]); }
         printf("\n");
         break;
     }
@@ -92,13 +84,9 @@ int calculate_sum(int a, int b, int c)
 
 float calculate_average(int *values, int count)
 {
-    if (count == 0) {
-        return 0.0f;
-    }
+    if (count == 0) { return 0.0f; }
     int sum = 0;
-    for (int i = 0; i < count; i++) {
-        sum += values[i];
-    }
+    for (int i = 0; i < count; i++) { sum += values[i]; }
     return (float)sum / count;
 }
 
@@ -107,18 +95,10 @@ void nested_conditions_example(int x, int y, int z)
 {
     if (x > 0)
         if (y > 0)
-            if (z > 0) {
-                printf("All positive\n");
-            }
-            else {
-                printf("Z not positive\n");
-            }
-        else {
-            printf("Y not positive\n");
-        }
-    else {
-        printf("X not positive\n");
-    }
+            if (z > 0) { printf("All positive\n"); }
+            else { printf("Z not positive\n"); }
+        else { printf("Y not positive\n"); }
+    else { printf("X not positive\n"); }
 }
 
 
@@ -128,7 +108,8 @@ int main(void)
 
 
     int *numbers = create_array(5);
-    if (numbers == NULL) {
+    if (numbers == NULL)
+    {
         fprintf(stderr, "Memory allocation failed!\n");
         return EXIT_FAILURE;
     }
@@ -167,7 +148,8 @@ int main(void)
     //糟糕的指针和数组操作
     int *ptr = numbers;
     printf("Array elements: ");
-    while (*ptr) {
+    while (*ptr)
+    {
         printf("%d ", *ptr);
         ptr++;
     }
