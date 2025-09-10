@@ -9,20 +9,23 @@
 --indent-preproc-define
 --indent-col1-comments
 --indent-after-parens
+--indent-namespaces
 
 # 括号设置
 --attach-namespaces
 --attach-classes
 --attach-inlines
---break-closing-brackets
+--attach-closing-while
 --break-one-line-headers
---add-brackets
 
 # 空格和填充
 --pad-oper
+--pad-include
 --pad-header
 --pad-comma
 --pad-first-paren-out
+--pad-return-type
+--pad-param-type
 --unpad-paren
 
 # 指针和对齐
@@ -31,7 +34,10 @@
 
 # 行长度和换行
 --max-code-length=120
---max-instatement-indent=40
+
+# 空行处理
+--squeeze-lines=1
+--squeeze-ws
 
 # 其他格式
 --convert-tabs
