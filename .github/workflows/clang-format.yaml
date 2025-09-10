@@ -68,112 +68,52 @@ jobs:
             fi
           done
           
-          FILES=$(echo "$FILES" | sort | uniq)
-          
-          # 处理用户输入的排除模式
-          EXCLUDE_PATTERNS="${{ github.event.inputs.exclude_patterns }}"
-          if [ -n "$EXCLUDE_PATTERNS" ] && [ -n "$FILES" ]; then
-            IFS=',' read -ra PATTERNS <<< "$EXCLUDE_PATTERNS"
-            for pattern in "${PATTERNS[@]}"; do
-              pattern=$(echo "$pattern" | xargs)
-              if [ -n "$pattern" ]; then
-                pattern=${pattern%/}
-                echo "用户排除模式: $pattern"
-                FILES=$(echo "$FILES" | grep -v "$pattern" || echo "$FILES")
-              fi
-            done
+          # 如果没有源文件，退出
+          if [ -z "$FILES" ]; then
+            echo "❌ 没有需要格式化的源文件"
+            echo "files_count=0" >> $GITHUB_OUTPUT
+            exit 0
           fi
           
-          # 处理.ignore_format.yml文件中的排除规则 - 简化版本
-          if [ -n "$FILES" ]; then
-            echo "开始检查.ignore_format.yml排除规则..."
-            FILTERED_FILES=""
-            IFS=$'\n' read -d '' -ra FILES_ARRAY <<< "$FILES"
-            
-            for file in "${FILES_ARRAY[@]}"; do
-              if [ -z "$file" ]; then
-                continue
-              fi
-              
-              # 检查文件是否应该被排除
+          # 处理.ignore_format.yml
+          FILTERED_FILES=""
+          if [ -f ".ignore_format.yml" ]; then
+            echo "开始检查 .ignore_format.yml 排除规则..."
+            IGNORE_PATTERNS=$(grep -v '^#' .ignore_format.yml | grep -v '^[[:space:]]*$' || true)
+            for file in $FILES; do
               should_exclude=false
-              
-              # 查找文件所在目录及其父目录中的.ignore_format.yml
-              dir=$(dirname "$file")
-              while [ "$dir" != "." ]; do
-                ignore_file="$dir/.ignore_format.yml"
-                if [ -f "$ignore_file" ]; then
-                  echo "找到忽略文件: $ignore_file"
-                  
-                  # 使用更简单的方法解析YAML文件
-                  # 先检查文件内容
-                  echo "忽略文件内容:"
-                  cat "$ignore_file" || true
-                  
-                  # 提取排除模式 - 简化方法
-                  exclude_patterns=$(grep -v '^#' "$ignore_file" | grep -v '^$' | grep -E "^\s*-" | sed -e 's/^[[:space:]]*-[[:space:]]*//' -e 's/[[:space:]]*$//' | tr -d '\r' | tr -d '"' | tr -d "'" 2>/dev/null || true)
-                  
-                  if [ -n "$exclude_patterns" ]; then
-                    echo "找到排除模式:"
-                    echo "$exclude_patterns"
-                    
-                    while IFS= read -r pattern; do
-                      pattern=$(echo "$pattern" | xargs)
-                      if [ -n "$pattern" ]; then
-                        echo "检查模式: '$pattern' 对文件: '$file'"
-                        # 简单的模式匹配
-                        if [[ "$file" == "$pattern" ]] || 
-                           [[ "$file" == */"$pattern" ]] || 
-                           [[ "$file" == *"$pattern"* ]]; then
-                          echo "❌ 文件 $file 被 $ignore_file 中的模式 '$pattern' 排除"
-                          should_exclude=true
-                          break 2
-                        fi
-                      fi
-                    done <<< "$exclude_patterns"
-                  else
-                    echo "忽略文件中没有找到有效的排除模式"
-                    # 尝试其他格式
-                    alt_patterns=$(grep -E "^exclude:" "$ignore_file" -A 10 2>/dev/null | grep -E "^\s*-" | sed -e 's/^[[:space:]]*-[[:space:]]*//' -e 's/[[:space:]]*$//' | tr -d '\r' | tr -d '"' | tr -d "'" 2>/dev/null || true)
-                    if [ -n "$alt_patterns" ]; then
-                      echo "找到替代格式的排除模式:"
-                      echo "$alt_patterns"
-                    fi
-                  fi
-                fi
-                
-                # 移动到父目录，防止无限循环
-                parent_dir=$(dirname "$dir")
-                if [ "$parent_dir" = "$dir" ]; then
+              for pattern in $IGNORE_PATTERNS; do
+                if [[ "$file" == $pattern ]]; then
+                  echo "❌ 文件 $file 被忽略 (匹配 $pattern)"
+                  should_exclude=true
                   break
                 fi
-                dir="$parent_dir"
               done
-              
               if [ "$should_exclude" = false ]; then
                 FILTERED_FILES="$FILTERED_FILES$file"$'\n'
               fi
             done
-            
-            FILES="$FILTERED_FILES"
+          else
+            FILTERED_FILES="$FILES"
           fi
-
-          if [ -z "$FILES" ]; then
+          
+          if [ -z "$FILTERED_FILES" ]; then
             echo "❌ 没有需要格式化的文件（可能都被排除了）"
             echo "files_count=0" >> $GITHUB_OUTPUT
             exit 0
           fi
           
           echo "最终需要格式化的文件:"
-          echo "$FILES"
+          echo "$FILTERED_FILES"
           
-          FILE_COUNT=$(echo "$FILES" | wc -l)
+          FILE_COUNT=$(echo "$FILTERED_FILES" | wc -l)
           echo "找到 $FILE_COUNT 个需要格式化的文件"
           echo "files_count=$FILE_COUNT" >> $GITHUB_OUTPUT
           
           echo "files_list<<EOF" >> $GITHUB_OUTPUT
-          echo "$FILES" >> $GITHUB_OUTPUT
+          echo "$FILTERED_FILES" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
+
 
       - name: Format code with clang-format
         if: steps.find-files.outputs.files_count != '0'
