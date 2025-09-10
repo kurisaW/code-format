@@ -14,7 +14,7 @@ IndentGotoLabels: true
 IndentPPDirectives: None
 
 # 大括号风格
-BreakBeforeBraces: Custom
+BreakBeforeBraces: Allman
 BraceWrapping:
   AfterFunction: true
   AfterStruct: true

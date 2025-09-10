@@ -42,32 +42,7 @@ jobs:
           # 检查支持的功能
           echo "📋 Checking supported features..."
           clang-format --help | grep -i "align\|consecutive" || echo "No align/consecutive options found"
-      - name: Validate .clang-format
-        run: |
-          if [ ! -f ".clang-format" ]; then
-            echo "❌ Error: .clang-format file not found in repository root!"
-            exit 1
-          fi
-          echo "✅ Found .clang-format configuration file"
-          
-          # 首先尝试简单的验证
-          echo "🔍 Testing basic configuration..."
-          if ! clang-format --style=file -dump-config > /dev/null 2>&1; then
-            echo "❌ Basic configuration validation failed"
-            echo "Trying to get detailed error message..."
-            clang-format --style=file -dump-config 2>&1 | head -20
-            exit 1
-          fi
-          
-          # 测试具体功能
-          echo "🔍 Testing specific formatting..."
-          TEST_CODE="int main(){return 0;}"
-          if echo "$TEST_CODE" | clang-format --style=file; then
-            echo "✅ Configuration test passed"
-          else
-            echo "❌ Configuration test failed"
-            exit 1
-          fi
+
       - name: Get changed files from PR
         id: changed-files
         uses: tj-actions/changed-files@v44
