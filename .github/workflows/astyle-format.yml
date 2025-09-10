@@ -8,7 +8,7 @@ on:
         required: false
         default: ''
       branch:
-        description: "要格式化的分支 | Branch to format"
+        description: "要格式化的分支\n Branch to format"
         required: true
         default: ''
 
