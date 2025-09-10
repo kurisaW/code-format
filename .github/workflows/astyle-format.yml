@@ -42,15 +42,41 @@ jobs:
           fi
           echo "✅ Found .astylerc configuration file"
 
+      - name: Get changed files from PR
+        id: changed-files
+        uses: tj-actions/changed-files@v44
+        with:
+          since_last_remote_commit: true
+          separator: ","
+
       - name: Find source files to format
         id: find-files
         run: |
-          # 首先找到所有源文件
-          FILES=$(find . -type f \( -name '*.cpp' -o -name '*.h' -o -name '*.c' -o -name '*.hpp' -o -name '*.cc' \) | sort)
+          # 获取PR中修改的文件
+          CHANGED_FILES="${{ steps.changed-files.outputs.all_changed_files }}"
+          echo "PR中修改的文件: $CHANGED_FILES"
+          
+          # 如果没有修改的文件，退出
+          if [ -z "$CHANGED_FILES" ]; then
+            echo "❌ PR中没有修改的文件"
+            echo "files_count=0" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          # 过滤出需要格式化的源文件
+          FILES=""
+          IFS=',' read -ra FILE_ARRAY <<< "$CHANGED_FILES"
+          for file in "${FILE_ARRAY[@]}"; do
+            if [[ "$file" =~ \.(cpp|h|c|hpp|cc)$ ]]; then
+              FILES="$FILES$file"$'\n'
+            fi
+          done
+          
+          FILES=$(echo "$FILES" | sort | uniq)
           
           # 处理排除模式
           EXCLUDE_PATTERNS="${{ github.event.inputs.exclude_patterns }}"
-          if [ -n "$EXCLUDE_PATTERNS" ]; then
+          if [ -n "$EXCLUDE_PATTERNS" ] && [ -n "$FILES" ]; then
             IFS=',' read -ra PATTERNS <<< "$EXCLUDE_PATTERNS"
             for pattern in "${PATTERNS[@]}"; do
               pattern=$(echo "$pattern" | xargs)  # 去除空格
@@ -65,13 +91,13 @@ jobs:
           fi
           
           if [ -z "$FILES" ]; then
-            echo "❌ 未找到需要格式化的文件"
+            echo "❌ 没有需要格式化的文件（可能都被排除了）"
             echo "files_count=0" >> $GITHUB_OUTPUT
             exit 0
           fi
           
           # 显示找到的文件用于调试
-          echo "找到的文件:"
+          echo "需要格式化的文件:"
           echo "$FILES"
           
           FILE_COUNT=$(echo "$FILES" | wc -l)
@@ -93,6 +119,8 @@ jobs:
             if [ -f "$file" ]; then
               echo "📝 格式化: $file"
               astyle --options=.astylerc "$file" || echo "⚠️  格式化 $file 时出现警告"
+            else
+              echo "⚠️  文件不存在: $file"
             fi
           done
           echo "✅ 代码格式化完成"
