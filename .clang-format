@@ -8,7 +8,7 @@
 Language: Cpp
 BasedOnStyle: LLVM
 AccessModifierOffset: -1
-AlignAfterOpenBracket: Align
+AlignAfterOpenBracket: AlwaysBreak
 AlignArrayOfStructures: Right
 AlignConsecutiveAssignments:
   Enabled: true
