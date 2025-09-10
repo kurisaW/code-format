@@ -29,6 +29,14 @@ jobs:
           ref: ${{ github.event.inputs.branch }}
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
+          # 添加这行确保使用LF行尾符
+          lfs: false
+
+      - name: Cache clang-format
+        uses: actions/cache@v3
+        with:
+          path: /usr/bin/clang-format
+          key: clang-format-${{ runner.os }}
 
       - name: Install clang-format
         run: sudo apt-get update && sudo apt-get install -y clang-format
