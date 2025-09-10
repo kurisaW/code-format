@@ -19,7 +19,7 @@ permissions:
 jobs:
   format-code:
     if: |
-      github.event.pull_request.head.repo.fork == true ||
+      github.event.pull_request.head.repo.fork == true &&
       github.repository != 'kurisaW/code-format'
     runs-on: ubuntu-latest
     
@@ -34,6 +34,16 @@ jobs:
       - name: Install clang-format
         run: sudo apt-get update && sudo apt-get install -y clang-format
 
+      - name: Check clang-format version
+        run: |
+          echo "📋 clang-format version information:"
+          clang-format --version
+          echo "📋 Detailed version info:"
+          clang-format -version
+          # 检查支持的功能
+          echo "📋 Checking supported features..."
+          clang-format --help | grep -i "align\|consecutive" || echo "No align/consecutive options found"
+
       - name: Validate .clang-format
         run: |
           if [ ! -f ".clang-format" ]; then
@@ -41,11 +51,25 @@ jobs:
             exit 1
           fi
           echo "✅ Found .clang-format configuration file"
-          # 验证配置文件语法
-          clang-format --style=file --dump-config > /dev/null 2>&1 || {
-            echo "❌ Error: Invalid .clang-format configuration"
+          
+          # 首先尝试简单的验证
+          echo "🔍 Testing basic configuration..."
+          if ! clang-format --style=file -dump-config > /dev/null 2>&1; then
+            echo "❌ Basic configuration validation failed"
+            echo "Trying to get detailed error message..."
+            clang-format --style=file -dump-config 2>&1 | head -20
             exit 1
-          }
+          fi
+          
+          # 测试具体功能
+          echo "🔍 Testing specific formatting..."
+          TEST_CODE="int main(){return 0;}"
+          if echo "$TEST_CODE" | clang-format --style=file; then
+            echo "✅ Configuration test passed"
+          else
+            echo "❌ Configuration test failed"
+            exit 1
+          fi
 
       - name: Get changed files from PR
         id: changed-files
@@ -121,22 +145,21 @@ jobs:
           FILES="${{ steps.find-files.outputs.files_list }}"
           
           # 使用clang-format批量格式化文件
-          echo "$FILES" | xargs -I {} clang-format -style=file -i "{}"
-          
-          # 检查每个文件是否成功格式化
-          echo "$FILES" | while read -r file; do
+          echo "$FILES" | xargs -I {} sh -c '
+            file="{}"
             if [ -f "$file" ]; then
-              if clang-format -style=file "$file" --dry-run -Werror >/dev/null 2>&1; then
+              echo "📝 格式化: $file"
+              clang-format -style=file -i "$file"
+              if [ $? -eq 0 ]; then
                 echo "✅ 格式化成功: $file"
               else
-                echo "❌ 格式化失败或语法错误: $file"
-                # 显示详细错误信息
-                clang-format -style=file "$file" --dry-run
+                echo "❌ 格式化失败: $file"
+                exit 1
               fi
             else
               echo "⚠️  文件不存在: $file"
             fi
-          done
+          '
           
           echo "✅ 代码格式化完成"
 
@@ -171,5 +194,4 @@ jobs:
           echo "排除模式: ${{ github.event.inputs.exclude_patterns || '无' }}"
           echo "处理文件数: ${{ steps.find-files.outputs.files_count }}"
           echo "有更改: ${{ steps.check-changes.outputs.has_changes }}"
-          echo "格式化工具: clang-format"
-          echo "配置文件: .clang-format"
+          echo "clang-format 版本: $(clang-format --version | head -1)"
