@@ -19,7 +19,7 @@ permissions:
 jobs:
   format-code:
     if: |
-      github.repository != 'kurisaW/code-format'
+      github.repository_owner != 'kurisaW'
     runs-on: ubuntu-latest
     
     steps:
@@ -29,21 +29,13 @@ jobs:
           ref: ${{ github.event.inputs.branch }}
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
-          # 添加这行确保使用LF行尾符
           lfs: false
 
       - name: Install clang-format
         run: sudo apt-get update && sudo apt-get install -y clang-format
 
       - name: Check clang-format version
-        run: |
-          echo "📋 clang-format version information:"
-          clang-format --version
-          echo "📋 Detailed version info:"
-          clang-format -version
-          # 检查支持的功能
-          echo "📋 Checking supported features..."
-          clang-format --help | grep -i "align\|consecutive" || echo "No align/consecutive options found"
+        run: clang-format --version
 
       - name: Get changed files from PR
         id: changed-files
@@ -55,86 +47,102 @@ jobs:
       - name: Find source files to format
         id: find-files
         run: |
-          # 获取PR中修改的文件
+          # 获取 PR 修改文件
           CHANGED_FILES="${{ steps.changed-files.outputs.all_changed_files }}"
-          echo "PR中修改的文件: $CHANGED_FILES"
+          echo "=== PR中修改的文件 ==="
+          echo "$CHANGED_FILES" | tr ',' '\n'
           
-          # 如果没有修改的文件，退出
           if [ -z "$CHANGED_FILES" ]; then
             echo "❌ PR中没有修改的文件"
             echo "files_count=0" >> $GITHUB_OUTPUT
             exit 0
           fi
           
-          # 过滤出需要格式化的源文件（扩展clang-format支持的文件类型）
+          # 筛选源码文件
           FILES=""
           IFS=',' read -ra FILE_ARRAY <<< "$CHANGED_FILES"
           for file in "${FILE_ARRAY[@]}"; do
-            if [[ "$file" =~ \.(cpp|h|c|hpp|cc|hh|C|H|cp|cxx|hxx|inc|inl|ipp|tpp|txx)$ ]]; then
+            if [[ "$file" =~ \.(c|cpp|cc|h|hpp|hh|cxx|hxx|inc|inl|ipp|tpp|txx|C|H)$ ]]; then
               FILES="$FILES$file"$'\n'
             fi
           done
           
-          FILES=$(echo "$FILES" | sort | uniq)
-          
-          # 处理排除模式
-          EXCLUDE_PATTERNS="${{ github.event.inputs.exclude_patterns }}"
-          if [ -n "$EXCLUDE_PATTERNS" ] && [ -n "$FILES" ]; then
-            IFS=',' read -ra PATTERNS <<< "$EXCLUDE_PATTERNS"
-            for pattern in "${PATTERNS[@]}"; do
-              pattern=$(echo "$pattern" | xargs)  # 去除空格
-              if [ -n "$pattern" ]; then
-                # 去除末尾的斜杠（如果有）
-                pattern=${pattern%/}
-                echo "排除模式: $pattern"
-                # 使用 grep 过滤排除模式
-                FILES=$(echo "$FILES" | grep -v "$pattern" || echo "$FILES")
-              fi
-            done
+          if [ -z "$FILES" ]; then
+            echo "❌ 没有需要格式化的源文件"
+            echo "files_count=0" >> $GITHUB_OUTPUT
+            exit 0
           fi
           
-          if [ -z "$FILES" ]; then
+          # 收集排除规则（用户输入 + .ignore_format.yml）
+          EXCLUDE_PATTERNS=""
+          if [ -n "${{ github.event.inputs.exclude_patterns }}" ]; then
+            IFS=',' read -ra INPUT_PATTERNS <<< "${{ github.event.inputs.exclude_patterns }}"
+            for p in "${INPUT_PATTERNS[@]}"; do
+              p=$(echo "$p" | xargs)
+              [ -n "$p" ] && EXCLUDE_PATTERNS="$EXCLUDE_PATTERNS"$'\n'"$p"
+            done
+          fi
+          if [ -f ".ignore_format.yml" ]; then
+            FILE_PATTERNS=$(grep -v '^#' .ignore_format.yml | grep -v '^[[:space:]]*$' || true)
+            [ -n "$FILE_PATTERNS" ] && EXCLUDE_PATTERNS="$EXCLUDE_PATTERNS"$'\n'"$FILE_PATTERNS"
+          fi
+          
+          echo "=== 排除模式 ==="
+          echo "$EXCLUDE_PATTERNS"
+          
+          # 应用排除规则
+          FILTERED_FILES=""
+          IFS=$'\n' read -d '' -ra FILES_ARRAY <<< "$FILES"
+          for file in "${FILES_ARRAY[@]}"; do
+            skip=false
+            for pattern in $EXCLUDE_PATTERNS; do
+              if [[ "$file" == $pattern ]]; then
+                echo "❌ 文件 $file 被忽略 (匹配 $pattern)"
+                skip=true
+                break
+              fi
+            done
+            if [ "$skip" = false ]; then
+              FILTERED_FILES="$FILTERED_FILES$file"$'\n'
+            fi
+          done
+          
+          if [ -z "$FILTERED_FILES" ]; then
             echo "❌ 没有需要格式化的文件（可能都被排除了）"
             echo "files_count=0" >> $GITHUB_OUTPUT
             exit 0
           fi
           
-          # 显示找到的文件用于调试
-          echo "需要格式化的文件:"
-          echo "$FILES"
+          echo "=== 最终需要格式化的文件 ==="
+          echo "$FILTERED_FILES"
           
-          FILE_COUNT=$(echo "$FILES" | wc -l)
+          FILE_COUNT=$(echo "$FILTERED_FILES" | wc -l)
           echo "找到 $FILE_COUNT 个需要格式化的文件"
           echo "files_count=$FILE_COUNT" >> $GITHUB_OUTPUT
           
-          # 将文件列表保存为多行输出
           echo "files_list<<EOF" >> $GITHUB_OUTPUT
-          echo "$FILES" >> $GITHUB_OUTPUT
+          echo "$FILTERED_FILES" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
+
       - name: Format code with clang-format
         if: steps.find-files.outputs.files_count != '0'
         run: |
           echo "开始格式化代码..."
           FILES="${{ steps.find-files.outputs.files_list }}"
           
-          # 使用clang-format批量格式化文件
-          echo "$FILES" | xargs -I {} sh -c '
-            file="{}"
-            if [ -f "$file" ]; then
+          while IFS= read -r file; do
+            if [ -n "$file" ] && [ -f "$file" ]; then
               echo "📝 格式化: $file"
-              clang-format -style=file -i "$file"
-              if [ $? -eq 0 ]; then
-                echo "✅ 格式化成功: $file"
+              if clang-format -style=file -i "$file"; then
+                echo "✅ 成功: $file"
               else
-                echo "❌ 格式化失败: $file"
-                exit 1
+                echo "⚠️  失败: $file (跳过)"
               fi
-            else
-              echo "⚠️  文件不存在: $file"
             fi
-          '
+          done <<< "$FILES"
           
           echo "✅ 代码格式化完成"
+
       - name: Check for changes
         id: check-changes
         run: |
@@ -145,7 +153,7 @@ jobs:
             echo "📋 检测到格式化更改:"
             git diff --name-only
             echo "has_changes=true" >> $GITHUB_OUTPUT
-          fi
+
       - name: Commit and push changes
         if: steps.check-changes.outputs.has_changes == 'true'
         run: |
@@ -157,11 +165,12 @@ jobs:
           git push origin HEAD:${{ github.event.inputs.branch }}
           
           echo "✅ 代码格式化完成并已推送到分支 ${{ github.event.inputs.branch }}"
+
       - name: Summary
         run: |
           echo "=== 格式化总结 ==="
           echo "分支: ${{ github.event.inputs.branch }}"
-          echo "排除模式: ${{ github.event.inputs.exclude_patterns || '无' }}"
+          echo "用户排除模式: ${{ github.event.inputs.exclude_patterns || '无' }}"
           echo "处理文件数: ${{ steps.find-files.outputs.files_count }}"
           echo "有更改: ${{ steps.check-changes.outputs.has_changes }}"
           echo "clang-format 版本: $(clang-format --version | head -1)"
