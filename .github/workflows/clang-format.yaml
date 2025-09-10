@@ -32,12 +32,6 @@ jobs:
           # 添加这行确保使用LF行尾符
           lfs: false
 
-      - name: Cache clang-format
-        uses: actions/cache@v3
-        with:
-          path: /usr/bin/clang-format
-          key: clang-format-${{ runner.os }}
-
       - name: Install clang-format
         run: sudo apt-get update && sudo apt-get install -y clang-format
 
@@ -50,33 +44,6 @@ jobs:
           # 检查支持的功能
           echo "📋 Checking supported features..."
           clang-format --help | grep -i "align\|consecutive" || echo "No align/consecutive options found"
-
-      - name: Debug clang-format configuration
-        run: |
-          echo "=== .clang-format 文件内容 ==="
-          cat .clang-format || echo "未找到 .clang-format 文件"
-          
-          echo "=== 当前生效的配置 ==="
-          clang-format -style=file -dump-config
-          
-          echo "=== 测试格式化效果 ==="
-          cat > test_debug.cpp << 'EOF'
-          int *test_function(int size) {
-              if (size == 0) {
-                  return NULL;
-              }
-              for (int i = 0; i < size; i++) {
-                  // do something
-              }
-              return malloc(size);
-          }
-          EOF
-          
-          echo "格式化前:"
-          cat test_debug.cpp
-          
-          echo "格式化后:"
-          clang-format -style=file test_debug.cpp
 
       - name: Get changed files from PR
         id: changed-files
