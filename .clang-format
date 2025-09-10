@@ -1,5 +1,5 @@
 ---
-Language: C
+Language: ObjC
 BasedOnStyle: LLVM
 
 # 缩进与宽度
@@ -20,13 +20,13 @@ BraceWrapping:
   AfterStruct: true
   AfterUnion: true
   AfterEnum: true
-  AfterControlStatement: false
+  AfterControlStatement: true
   BeforeElse: true
-  BeforeWhile: false
+  BeforeWhile: true
   IndentBraces: false
-  SplitEmptyFunction: false
-  SplitEmptyRecord: false
-  SplitEmptyNamespace: false
+  SplitEmptyFunction: true
+  SplitEmptyRecord: true
+  SplitEmptyNamespace: true
 
 # 指针和数组
 PointerAlignment: Right
