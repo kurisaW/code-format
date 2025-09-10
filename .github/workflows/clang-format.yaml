@@ -35,9 +35,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y clang-format
 
       - name: Check clang-format version
-        run: |
-          echo "📋 clang-format version information:"
-          clang-format --version
+        run: clang-format --version
 
       - name: Get changed files from PR
         id: changed-files
@@ -49,9 +47,10 @@ jobs:
       - name: Find source files to format
         id: find-files
         run: |
-          # 获取PR中修改的文件
+          # 获取 PR 修改文件
           CHANGED_FILES="${{ steps.changed-files.outputs.all_changed_files }}"
-          echo "PR中修改的文件: $CHANGED_FILES"
+          echo "=== PR中修改的文件 ==="
+          echo "$CHANGED_FILES" | tr ',' '\n'
           
           if [ -z "$CHANGED_FILES" ]; then
             echo "❌ PR中没有修改的文件"
@@ -59,43 +58,54 @@ jobs:
             exit 0
           fi
           
-          # 过滤出需要格式化的源文件
+          # 筛选源码文件
           FILES=""
           IFS=',' read -ra FILE_ARRAY <<< "$CHANGED_FILES"
           for file in "${FILE_ARRAY[@]}"; do
-            if [[ "$file" =~ \.(cpp|h|c|hpp|cc|hh|C|H|cp|cxx|hxx|inc|inl|ipp|tpp|txx)$ ]]; then
+            if [[ "$file" =~ \.(c|cpp|cc|h|hpp|hh|cxx|hxx|inc|inl|ipp|tpp|txx|C|H)$ ]]; then
               FILES="$FILES$file"$'\n'
             fi
           done
           
-          # 如果没有源文件，退出
           if [ -z "$FILES" ]; then
             echo "❌ 没有需要格式化的源文件"
             echo "files_count=0" >> $GITHUB_OUTPUT
             exit 0
           fi
           
-          # 处理.ignore_format.yml
-          FILTERED_FILES=""
+          # 收集排除规则（用户输入 + .ignore_format.yml）
+          EXCLUDE_PATTERNS=""
+          if [ -n "${{ github.event.inputs.exclude_patterns }}" ]; then
+            IFS=',' read -ra INPUT_PATTERNS <<< "${{ github.event.inputs.exclude_patterns }}"
+            for p in "${INPUT_PATTERNS[@]}"; do
+              p=$(echo "$p" | xargs)
+              [ -n "$p" ] && EXCLUDE_PATTERNS="$EXCLUDE_PATTERNS"$'\n'"$p"
+            done
+          fi
           if [ -f ".ignore_format.yml" ]; then
-            echo "开始检查 .ignore_format.yml 排除规则..."
-            IGNORE_PATTERNS=$(grep -v '^#' .ignore_format.yml | grep -v '^[[:space:]]*$' || true)
-            for file in $FILES; do
-              should_exclude=false
-              for pattern in $IGNORE_PATTERNS; do
-                if [[ "$file" == $pattern ]]; then
-                  echo "❌ 文件 $file 被忽略 (匹配 $pattern)"
-                  should_exclude=true
-                  break
-                fi
-              done
-              if [ "$should_exclude" = false ]; then
-                FILTERED_FILES="$FILTERED_FILES$file"$'\n'
+            FILE_PATTERNS=$(grep -v '^#' .ignore_format.yml | grep -v '^[[:space:]]*$' || true)
+            [ -n "$FILE_PATTERNS" ] && EXCLUDE_PATTERNS="$EXCLUDE_PATTERNS"$'\n'"$FILE_PATTERNS"
+          fi
+          
+          echo "=== 排除模式 ==="
+          echo "$EXCLUDE_PATTERNS"
+          
+          # 应用排除规则
+          FILTERED_FILES=""
+          IFS=$'\n' read -d '' -ra FILES_ARRAY <<< "$FILES"
+          for file in "${FILES_ARRAY[@]}"; do
+            skip=false
+            for pattern in $EXCLUDE_PATTERNS; do
+              if [[ "$file" == $pattern ]]; then
+                echo "❌ 文件 $file 被忽略 (匹配 $pattern)"
+                skip=true
+                break
               fi
             done
-          else
-            FILTERED_FILES="$FILES"
-          fi
+            if [ "$skip" = false ]; then
+              FILTERED_FILES="$FILTERED_FILES$file"$'\n'
+            fi
+          done
           
           if [ -z "$FILTERED_FILES" ]; then
             echo "❌ 没有需要格式化的文件（可能都被排除了）"
@@ -103,7 +113,7 @@ jobs:
             exit 0
           fi
           
-          echo "最终需要格式化的文件:"
+          echo "=== 最终需要格式化的文件 ==="
           echo "$FILTERED_FILES"
           
           FILE_COUNT=$(echo "$FILTERED_FILES" | wc -l)
@@ -114,35 +124,22 @@ jobs:
           echo "$FILTERED_FILES" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
-
       - name: Format code with clang-format
         if: steps.find-files.outputs.files_count != '0'
         run: |
           echo "开始格式化代码..."
           FILES="${{ steps.find-files.outputs.files_list }}"
           
-          # 创建格式化脚本，确保正确处理包含空格的文件名
-          cat > format_files.sh << 'EOF'
-          #!/bin/bash
-          files="$1"
           while IFS= read -r file; do
             if [ -n "$file" ] && [ -f "$file" ]; then
               echo "📝 格式化: $file"
-              clang-format -style=file -i "$file"
-              if [ $? -eq 0 ]; then
-                echo "✅ 格式化成功: $file"
+              if clang-format -style=file -i "$file"; then
+                echo "✅ 成功: $file"
               else
-                echo "❌ 格式化失败: $file"
-                exit 1
+                echo "⚠️  失败: $file (跳过)"
               fi
-            elif [ -n "$file" ]; then
-              echo "⚠️  文件不存在: $file"
             fi
-          done <<< "$files"
-          EOF
-          
-          chmod +x format_files.sh
-          ./format_files.sh "$FILES"
+          done <<< "$FILES"
           
           echo "✅ 代码格式化完成"
 
@@ -156,7 +153,6 @@ jobs:
             echo "📋 检测到格式化更改:"
             git diff --name-only
             echo "has_changes=true" >> $GITHUB_OUTPUT
-          fi
 
       - name: Commit and push changes
         if: steps.check-changes.outputs.has_changes == 'true'
