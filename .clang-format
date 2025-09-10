@@ -1,138 +1,77 @@
-# Available style options are described in https://clang.llvm.org/docs/ClangFormatStyleOptions.html
 ---
-Language: Cpp
+Language: C
 BasedOnStyle: LLVM
-AccessModifierOffset: -1
-AlignAfterOpenBracket: Align
-AlignArrayOfStructures: Right
-AlignConsecutiveAssignments:
-  Enabled: true
-  AcrossEmptyLines: false
-  AcrossComments: false
-AlignConsecutiveBitFields:
-  Enabled: true
-  AcrossEmptyLines: false
-  AcrossComments: false
-AlignConsecutiveDeclarations:
-  Enabled: true
-  AcrossEmptyLines: false
-  AcrossComments: false
-AlignConsecutiveMacros:
-  Enabled: true
-  AcrossEmptyLines: false
-  AcrossComments: false
-AlignEscapedNewlines: Left
-AlignOperands: Align
-AlignTrailingComments:
-  Kind: Always
-AllowAllArgumentsOnNextLine: false
-AllowAllParametersOfDeclarationOnNextLine: false
-AllowShortBlocksOnASingleLine: Always
-AllowShortCaseLabelsOnASingleLine: false
-AllowShortEnumsOnASingleLine: false
-AllowShortFunctionsOnASingleLine: InlineOnly
-AllowShortIfStatementsOnASingleLine: WithoutElse
-AllowShortLambdasOnASingleLine: All
-AllowShortLoopsOnASingleLine: true
-AlwaysBreakAfterDefinitionReturnType: None
-AlwaysBreakAfterReturnType: None
-AlwaysBreakBeforeMultilineStrings: false
-AlwaysBreakTemplateDeclarations: MultiLine
-BinPackArguments: true
-BinPackParameters: true
-BitFieldColonSpacing: Both
-BraceWrapping:
-  AfterCaseLabel: false
-  AfterClass: true
-  AfterControlStatement: MultiLine
-  AfterEnum: true
-  AfterExternBlock: false
-  AfterFunction: true
-  AfterNamespace: true
-  AfterObjCDeclaration: true
-  AfterStruct: true
-  AfterUnion: false
-  BeforeCatch: true
-  BeforeElse: true
-  BeforeLambdaBody: false
-  BeforeWhile: false
-  IndentBraces: false
-  SplitEmptyFunction: true
-  SplitEmptyRecord: true
-  SplitEmptyNamespace: true
-BreakAfterAttributes: Never
-BreakArrays: false
-BreakBeforeBinaryOperators: NonAssignment
-BreakBeforeBraces: Custom
-BreakBeforeTernaryOperators: true
-BreakConstructorInitializers: AfterColon
-BreakInheritanceList: AfterColon
-BreakStringLiterals: true
+
+# 缩进与宽度
+IndentWidth: 4
+UseTab: Never
+TabWidth: 4
 ColumnLimit: 120
-CompactNamespaces: false
-ConstructorInitializerIndentWidth: 4
 ContinuationIndentWidth: 4
-Cpp11BracedListStyle: true
-DerivePointerAlignment: false
-DisableFormat: false
-EmptyLineAfterAccessModifier: Never
-EmptyLineBeforeAccessModifier: Always
-ExperimentalAutoDetectBinPacking: false
-FixNamespaceComments: true
-IncludeBlocks: Preserve
-IndentAccessModifiers: false
-IndentCaseBlocks: false
 IndentCaseLabels: false
-IndentExternBlock: NoIndent
+IndentCaseBlocks: false
 IndentGotoLabels: true
 IndentPPDirectives: None
-IndentWidth: 4
-IndentWrappedFunctionNames: false
-InsertBraces: false
-InsertNewlineAtEOF: true
-KeepEmptyLinesAtTheStartOfBlocks: false
-KeepEmptyLinesAtEOF: true
-MaxEmptyLinesToKeep: 2
-NamespaceIndentation: None
-PackConstructorInitializers: BinPack
-PenaltyBreakAssignment: 1000
-PenaltyBreakBeforeFirstCallParameter: 19
-PenaltyBreakComment: 300
-PenaltyBreakFirstLessLess: 120
-PenaltyBreakOpenParenthesis: 0
-PenaltyBreakString: 1000
-PenaltyBreakTemplateDeclaration: 10
-PenaltyExcessCharacter: 1000000
-PenaltyIndentedWhitespace: 0
-PenaltyReturnTypeOnItsOwnLine: 1000
+
+# 大括号风格
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterFunction: true
+  AfterStruct: true
+  AfterUnion: true
+  AfterEnum: true
+  AfterControlStatement: false
+  BeforeElse: true
+  BeforeWhile: false
+  IndentBraces: false
+  SplitEmptyFunction: false
+  SplitEmptyRecord: false
+  SplitEmptyNamespace: false
+
+# 指针和数组
 PointerAlignment: Right
-PPIndentWidth: 4
-ReflowComments: false
-RemoveBracesLLVM: false
-RemoveParentheses: Leave
-RemoveSemicolon: false
-RequiresClausePosition: OwnLine
-SeparateDefinitionBlocks: Leave
-ShortNamespaceLines: 1
-SortIncludes: Never
-SpaceAfterCStyleCast: false
-SpaceAfterLogicalNot: false
-SpaceAfterTemplateKeyword: true
 SpaceAroundPointerQualifiers: Both
+AlignArrayOfStructures: Right
+
+# 对齐
+AlignAfterOpenBracket: Align
+AlignConsecutiveAssignments:
+  Enabled: true
+AlignConsecutiveDeclarations:
+  Enabled: true
+AlignConsecutiveMacros:
+  Enabled: true
+AlignTrailingComments:
+  Kind: Always
+
+# 短语句
+AllowShortFunctionsOnASingleLine: InlineOnly
+AllowShortIfStatementsOnASingleLine: WithoutElse
+AllowShortLoopsOnASingleLine: true
+AllowShortBlocksOnASingleLine: Empty
+
+# 运算符与空格
+BreakBeforeBinaryOperators: NonAssignment
+BreakBeforeTernaryOperators: true
+SpaceBeforeParens: ControlStatements
 SpaceBeforeAssignmentOperators: true
 SpaceBeforeCaseColon: false
-SpaceBeforeCpp11BracedList: false
-SpaceBeforeCtorInitializerColon: true
-SpaceBeforeInheritanceColon: true
-SpaceBeforeParens: ControlStatements
-SpaceBeforeRangeBasedForLoopColon: true
 SpaceBeforeSquareBrackets: false
-SpaceInEmptyBlock: false
-SpacesBeforeTrailingComments: 1
-SpacesInAngles: Never
-SpacesInContainerLiterals: true
 SpacesInParens: Never
 SpacesInSquareBrackets: false
-Standard: Latest
-TabWidth: 4
-UseTab: Never
+SpacesInContainerLiterals: false
+SpaceInEmptyBlock: false
+SpaceAfterCStyleCast: false
+SpaceAfterLogicalNot: false
+BitFieldColonSpacing: Both
+
+# 注释
+ReflowComments: false
+SpacesBeforeTrailingComments: 1
+KeepEmptyLinesAtEOF: true
+MaxEmptyLinesToKeep: 2
+
+# 其他
+SortIncludes: Never
+InsertNewlineAtEOF: true
+Cpp11BracedListStyle: false

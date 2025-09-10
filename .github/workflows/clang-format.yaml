@@ -20,7 +20,7 @@ jobs:
   format-code:
     if: |
       github.repository != 'kurisaW/code-format'
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     
     steps:
       - name: Checkout code
@@ -30,19 +30,19 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Install clang-format-15
-        run: |
-          sudo apt-get update
-          # 添加LLVM源（Ubuntu 22.04支持）
-          wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo gpg --dearmor -o /usr/share/keyrings/llvm-archive-keyring.gpg
-          echo "deb [signed-by=/usr/share/keyrings/llvm-archive-keyring.gpg] http://apt.llvm.org/jammy/ llvm-toolchain-jammy-15 main" | sudo tee /etc/apt/sources.list.d/llvm.list
-          
-          sudo apt-get update
-          sudo apt-get install -y clang-format-15
-          sudo update-alternatives --install /usr/bin/clang-format clang-format /usr/bin/clang-format-15 100
-          sudo update-alternatives --set clang-format /usr/bin/clang-format-15
+      - name: Install clang-format
+        run: sudo apt-get update && sudo apt-get install -y clang-format
 
-      - name: Validate .clang-format configuration
+      - name: Check clang-format version
+        run: |
+          echo "📋 clang-format version information:"
+          clang-format --version
+          echo "📋 Detailed version info:"
+          clang-format -version
+          # 检查支持的功能
+          echo "📋 Checking supported features..."
+          clang-format --help | grep -i "align\|consecutive" || echo "No align/consecutive options found"
+      - name: Validate .clang-format
         run: |
           if [ ! -f ".clang-format" ]; then
             echo "❌ Error: .clang-format file not found in repository root!"
@@ -50,16 +50,24 @@ jobs:
           fi
           echo "✅ Found .clang-format configuration file"
           
-          # 验证配置文件语法
-          if clang-format --style=file -dump-config > /dev/null 2>&1; then
-            echo "✅ Configuration validation passed"
-          else
-            echo "❌ Configuration validation failed"
-            echo "Detailed error:"
-            clang-format --style=file -dump-config
+          # 首先尝试简单的验证
+          echo "🔍 Testing basic configuration..."
+          if ! clang-format --style=file -dump-config > /dev/null 2>&1; then
+            echo "❌ Basic configuration validation failed"
+            echo "Trying to get detailed error message..."
+            clang-format --style=file -dump-config 2>&1 | head -20
             exit 1
           fi
-
+          
+          # 测试具体功能
+          echo "🔍 Testing specific formatting..."
+          TEST_CODE="int main(){return 0;}"
+          if echo "$TEST_CODE" | clang-format --style=file; then
+            echo "✅ Configuration test passed"
+          else
+            echo "❌ Configuration test failed"
+            exit 1
+          fi
       - name: Get changed files from PR
         id: changed-files
         uses: tj-actions/changed-files@v44
@@ -126,7 +134,6 @@ jobs:
           echo "files_list<<EOF" >> $GITHUB_OUTPUT
           echo "$FILES" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
-
       - name: Format code with clang-format
         if: steps.find-files.outputs.files_count != '0'
         run: |
@@ -151,7 +158,6 @@ jobs:
           '
           
           echo "✅ 代码格式化完成"
-
       - name: Check for changes
         id: check-changes
         run: |
@@ -163,7 +169,6 @@ jobs:
             git diff --name-only
             echo "has_changes=true" >> $GITHUB_OUTPUT
           fi
-
       - name: Commit and push changes
         if: steps.check-changes.outputs.has_changes == 'true'
         run: |
@@ -175,13 +180,11 @@ jobs:
           git push origin HEAD:${{ github.event.inputs.branch }}
           
           echo "✅ 代码格式化完成并已推送到分支 ${{ github.event.inputs.branch }}"
-
       - name: Summary
         run: |
           echo "=== 格式化总结 ==="
-          echo "Ubuntu版本: 22.04"
           echo "分支: ${{ github.event.inputs.branch }}"
           echo "排除模式: ${{ github.event.inputs.exclude_patterns || '无' }}"
           echo "处理文件数: ${{ steps.find-files.outputs.files_count }}"
           echo "有更改: ${{ steps.check-changes.outputs.has_changes }}"
-          echo "clang-format版本: $(clang-format --version | head -1)"
+          echo "clang-format 版本: $(clang-format --version | head -1)"
