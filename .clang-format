@@ -47,7 +47,7 @@ AlignTrailingComments:
 # 短语句
 AllowShortFunctionsOnASingleLine: InlineOnly
 AllowShortIfStatementsOnASingleLine: WithoutElse
-AllowShortLoopsOnASingleLine: true
+AllowShortLoopsOnASingleLine: false
 AllowShortBlocksOnASingleLine: Empty
 
 # 运算符与空格
