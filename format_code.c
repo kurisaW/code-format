@@ -17,6 +17,7 @@ typedef struct{
 int id;char name[50];float score;}Student;
 
 
+
 typedef struct Node{int data;struct Node*next;}ListNode;
 
 
