@@ -19,7 +19,6 @@ permissions:
 jobs:
   format-code:
     if: |
-      github.event.pull_request.head.repo.fork == true &&
       github.repository != 'kurisaW/code-format'
     runs-on: ubuntu-latest
     
