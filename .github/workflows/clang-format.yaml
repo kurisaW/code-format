@@ -20,7 +20,7 @@ jobs:
   format-code:
     if: |
       github.repository != 'kurisaW/code-format'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     
     steps:
       - name: Checkout code
@@ -30,20 +30,36 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Install latest clang-format
+      - name: Install stable clang-format version
         run: |
-          # 添加 LLVM 官方源（Ubuntu 20.04/22.04）
-          wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
-          echo "deb http://apt.llvm.org/$(lsb_release -cs)/ llvm-toolchain-$(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/llvm.list
-          echo "deb http://apt.llvm.org/$(lsb_release -cs)/ llvm-toolchain-$(lsb_release -cs)-16 main" | sudo tee -a /etc/apt/sources.list.d/llvm.list
-          
           sudo apt-get update
-          sudo apt-get install -y clang-format-16
+          sudo apt-get install -y clang-format-14
           
-          # 设置为默认版本
-          sudo update-alternatives --install /usr/bin/clang-format clang-format /usr/bin/clang-format-16 100
+          # 设置为系统默认版本
+          sudo update-alternatives --install /usr/bin/clang-format clang-format /usr/bin/clang-format-14 100
+          sudo update-alternatives --set clang-format /usr/bin/clang-format-14
           
-          echo "✅ Installed: $(clang-format --version)"
+          echo "📋 Installed clang-format version:"
+          clang-format --version
+          echo "📋 Full path: $(which clang-format)"
+
+      - name: Validate .clang-format configuration
+        run: |
+          if [ ! -f ".clang-format" ]; then
+            echo "❌ Error: .clang-format file not found in repository root!"
+            exit 1
+          fi
+          echo "✅ Found .clang-format configuration file"
+          
+          # 验证配置文件语法
+          if clang-format --style=file -dump-config > /dev/null 2>&1; then
+            echo "✅ Configuration validation passed"
+          else
+            echo "❌ Configuration validation failed"
+            echo "Detailed error:"
+            clang-format --style=file -dump-config
+            exit 1
+          fi
 
       - name: Get changed files from PR
         id: changed-files
@@ -164,8 +180,9 @@ jobs:
       - name: Summary
         run: |
           echo "=== 格式化总结 ==="
+          echo "Ubuntu版本: 22.04"
           echo "分支: ${{ github.event.inputs.branch }}"
           echo "排除模式: ${{ github.event.inputs.exclude_patterns || '无' }}"
           echo "处理文件数: ${{ steps.find-files.outputs.files_count }}"
           echo "有更改: ${{ steps.check-changes.outputs.has_changes }}"
-          echo "clang-format 版本: $(clang-format --version | head -1)"
+          echo "clang-format版本: $(clang-format --version | head -1)"
