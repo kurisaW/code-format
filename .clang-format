@@ -1,0 +1,59 @@
+---
+Language: C  # 建议使用 Cpp 而不是 C，除非您只处理 C 代码
+BasedOnStyle: LLVM
+
+# 修复对齐配置
+AlignConsecutiveAssignments:
+  Enabled: true
+  AcrossEmptyLines: false
+  AcrossComments: false
+  # 移除不支持的 PadOperators
+
+AlignConsecutiveBitFields:
+  Enabled: true
+  AcrossEmptyLines: false
+  AcrossComments: false
+
+AlignConsecutiveDeclarations:
+  Enabled: true
+  AcrossEmptyLines: false
+  AcrossComments: false
+
+AlignConsecutiveMacros:
+  Enabled: true
+  AcrossEmptyLines: false
+  AcrossComments: false
+
+# 调整短函数处理
+AllowShortFunctionsOnASingleLine: InlineOnly  # 或者 Empty/Inline
+
+# 修复括号换行配置
+BraceWrapping:
+  AfterCaseLabel: false
+  AfterClass: true
+  AfterControlStatement: MultiLine  # 比 Always 更合理
+  AfterEnum: true
+  AfterExternBlock: false
+  AfterFunction: true
+  AfterNamespace: true
+  AfterObjCDeclaration: true
+  AfterStruct: true
+  AfterUnion: false
+  BeforeCatch: true
+  BeforeElse: true
+  BeforeLambdaBody: false
+  BeforeWhile: false
+  IndentBraces: false
+  SplitEmptyFunction: true
+  SplitEmptyRecord: true
+  SplitEmptyNamespace: true
+
+# 建议的额外优化
+BreakBeforeBraces: Custom
+ColumnLimit: 120  # 建议设置一个合理的列限制，0 表示无限制可能不利于可读性
+
+# 修复指针对齐（如果使用）
+PointerAlignment: Right
+
+# 移除或修复不存在的选项
+# 移除所有 PadOperators 和 AlignCompound 选项
