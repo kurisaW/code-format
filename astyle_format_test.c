@@ -13,6 +13,8 @@ void bad_indent_example()
     int x = 1;  // 错误：应该使用4空格缩进
 }
 
+
+
 // --indent-classes (结构体内容缩进)
 struct BadIndentStruct
 {
