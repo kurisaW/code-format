@@ -18,11 +18,13 @@ jobs:
         run: |
           echo "Event action: ${{ github.event.action }}"
           
+          # 获取 PR 的提交信息
           commits=$(curl -s \
             -H "Accept: application/vnd.github.v3+json" \
             -H "Authorization: Bearer $GITHUB_TOKEN" \
             "https://api.github.com/repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/commits")
 
+          # 检查 API 响应是否为数组
           if echo "$commits" | jq -e 'type == "array"' > /dev/null; then
             commit_count=$(echo "$commits" | jq '. | length')
             echo "PR commit count: $commit_count"
@@ -37,6 +39,7 @@ jobs:
             if [ "$should_comment" = true ]; then
               echo "Adding format notification comment..."
               
+              # 构建工作流链接
               branch="${{ github.event.pull_request.head.ref }}"
               fork_repo="${{ github.event.pull_request.head.repo.full_name }}"
               workflow_url="https://github.com/${fork_repo}/actions/workflows/astyle-format.yml"
@@ -54,11 +57,11 @@ jobs:
                 "### 🛠 操作步骤 | Steps"
                 ""
                 "1. **前往 Actions 页面 | Go to the Actions page**"
-                "[点击进入工作流 → | Click to open workflow →](${direct_link}"
+                "[点击进入工作流 → | Click to open workflow →](${direct_link})"
                 ""
-                "2. **点击 `Run workflow` | Click `Run workflow`**"
-                "- 设置需排除的文件/目录（目录请以“/”结尾）"
-                "Set files/directories to exclude (directories should end with "/")"
+                "2. **点击 \`Run workflow\` | Click \`Run workflow\`**"
+                "- 设置需排除的文件/目录（目录请以\"/\"结尾）"
+                "Set files/directories to exclude (directories should end with \"/\")"
                 "- 将目标分支设置为：**\`${branch}\`**"
                 "Set the target branch to: **\`${branch}\`**"
                 ""
@@ -69,7 +72,7 @@ jobs:
                 "---"
                 ""
                 "🔗 **快速链接 | Quick Link**："  
-                "[👉 运行格式化工作流 | Run Format Workflow](${direct_link}"
+                "[👉 运行格式化工作流 | Run Format Workflow](${direct_link})"
                 ""
                 "完成后，提交将自动更新至 \`${branch}\` 分支，关联的 Pull Request 也会同步更新。"
                 "Once completed, commits will be pushed to the \`${branch}\` branch automatically, and the related Pull Request will be updated."
@@ -77,19 +80,25 @@ jobs:
                 "如有问题欢迎联系我们，再次感谢您的贡献！💐"
                 "If you have any questions, feel free to reach out. Thanks again for your contribution!"
               )
+              
               # 拼接数组为多行字符串
               message=$(printf "%s\n" "${message_lines[@]}")
 
               echo "Message content:"
               echo "$message"
 
+              # 使用 jq 安全地构建 JSON 负载
+              json_payload=$(jq -n --arg body "$message" '{"body": $body}')
+
+              # 发送评论到 PR
               response=$(curl -s -w "\n%{http_code}" \
                 -X POST \
                 -H "Accept: application/vnd.github.v3+json" \
                 -H "Authorization: Bearer $GITHUB_TOKEN" \
                 "https://api.github.com/repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" \
-                -d "{\"body\": $(echo "$message" | jq -Rs .)}")
+                -d "$json_payload")
 
+              # 提取 HTTP 状态码和响应体
               http_code=$(echo "$response" | tail -n1)
               response_body=$(echo "$response" | sed '$d')
 
