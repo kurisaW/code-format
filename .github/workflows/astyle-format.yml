@@ -8,7 +8,7 @@ on:
         required: false
         default: ''
       branch:
-        description: "要格式化的分支\n Branch to format"
+        description: "要格式化的分支 | Branch to format"
         required: true
         default: ''
 
@@ -55,19 +55,29 @@ jobs:
             for pattern in "${PATTERNS[@]}"; do
               pattern=$(echo "$pattern" | xargs)  # 去除空格
               if [ -n "$pattern" ]; then
-                FIND_CMD="$FIND_CMD -not -path \"*/$pattern/*\" -not -name \"$pattern\""
+                # 处理目录排除 (以 / 结尾或包含 /)
+                if [[ "$pattern" == *"/"* ]] || [[ "$pattern" == *"*/"* ]]; then
+                  FIND_CMD="$FIND_CMD -not -path \"*/$pattern/*\""
+                else
+                  # 处理文件排除
+                  FIND_CMD="$FIND_CMD -not -name \"$pattern\""
+                fi
               fi
             done
           fi
           
           echo "执行查找命令: $FIND_CMD"
-          FILES=$(eval $FIND_CMD 2>/dev/null || true)
+          FILES=$(eval $FIND_CMD 2>/dev/null | sort || true)
           
           if [ -z "$FILES" ]; then
             echo "❌ 未找到需要格式化的文件"
             echo "files_count=0" >> $GITHUB_OUTPUT
             exit 0
           fi
+          
+          # 显示找到的文件用于调试
+          echo "找到的文件:"
+          echo "$FILES"
           
           FILE_COUNT=$(echo "$FILES" | wc -l)
           echo "找到 $FILE_COUNT 个需要格式化的文件"
