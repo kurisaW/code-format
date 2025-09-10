@@ -45,8 +45,8 @@ jobs:
       - name: Find source files to format
         id: find-files
         run: |
-          # 设置默认查找模式
-          FIND_CMD="find . -type f \( -name '*.cpp' -o -name '*.h' -o -name '*.c' -o -name '*.hpp' -o -name '*.cc' \)"
+          # 首先找到所有源文件
+          FILES=$(find . -type f \( -name '*.cpp' -o -name '*.h' -o -name '*.c' -o -name '*.hpp' -o -name '*.cc' \) | sort)
           
           # 处理排除模式
           EXCLUDE_PATTERNS="${{ github.event.inputs.exclude_patterns }}"
@@ -55,19 +55,14 @@ jobs:
             for pattern in "${PATTERNS[@]}"; do
               pattern=$(echo "$pattern" | xargs)  # 去除空格
               if [ -n "$pattern" ]; then
-                # 处理目录排除 (以 / 结尾或包含 /)
-                if [[ "$pattern" == *"/"* ]] || [[ "$pattern" == *"*/"* ]]; then
-                  FIND_CMD="$FIND_CMD -not -path \"*/$pattern/*\""
-                else
-                  # 处理文件排除
-                  FIND_CMD="$FIND_CMD -not -name \"$pattern\""
-                fi
+                # 去除末尾的斜杠（如果有）
+                pattern=${pattern%/}
+                echo "排除模式: $pattern"
+                # 使用 grep 过滤排除模式
+                FILES=$(echo "$FILES" | grep -v "$pattern" || echo "$FILES")
               fi
             done
           fi
-          
-          echo "执行查找命令: $FIND_CMD"
-          FILES=$(eval $FIND_CMD 2>/dev/null | sort || true)
           
           if [ -z "$FILES" ]; then
             echo "❌ 未找到需要格式化的文件"
