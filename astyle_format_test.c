@@ -5,6 +5,8 @@
 void bad_style_example()   // 错误：大括号应该换行
 {
     // ...
+
+    
 }
 
 // --indent=spaces=4 (4空格缩进)
