@@ -31,20 +31,13 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           lfs: false
 
-      - name: Install clang-format and yq (YAML处理器)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y clang-format jq
-          # 安装yq (YAML处理工具)
-          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
-          sudo chmod +x /usr/local/bin/yq
+      - name: Install clang-format
+        run: sudo apt-get update && sudo apt-get install -y clang-format
 
       - name: Check clang-format version
         run: |
           echo "📋 clang-format version information:"
           clang-format --version
-          echo "📋 yq version:"
-          yq --version
 
       - name: Get changed files from PR
         id: changed-files
@@ -91,7 +84,7 @@ jobs:
             done
           fi
           
-          # 处理.ignore_format.yml文件中的排除规则
+          # 处理.ignore_format.yml文件中的排除规则 - 简化版本
           if [ -n "$FILES" ]; then
             echo "开始检查.ignore_format.yml排除规则..."
             FILTERED_FILES=""
@@ -112,36 +105,49 @@ jobs:
                 if [ -f "$ignore_file" ]; then
                   echo "找到忽略文件: $ignore_file"
                   
-                  # 解析YAML文件中的排除规则
-                  if command -v yq &> /dev/null; then
-                    # 使用yq解析YAML
-                    exclude_patterns=$(yq '.exclude[]' "$ignore_file" 2>/dev/null || true)
-                    if [ -n "$exclude_patterns" ]; then
-                      while IFS= read -r pattern; do
-                        pattern=$(echo "$pattern" | xargs)
-                        if [[ "$file" == $pattern ]] || [[ "$file" == */$pattern ]] || [[ "$file" =~ $pattern ]]; then
+                  # 使用更简单的方法解析YAML文件
+                  # 先检查文件内容
+                  echo "忽略文件内容:"
+                  cat "$ignore_file" || true
+                  
+                  # 提取排除模式 - 简化方法
+                  exclude_patterns=$(grep -v '^#' "$ignore_file" | grep -v '^$' | grep -E "^\s*-" | sed -e 's/^[[:space:]]*-[[:space:]]*//' -e 's/[[:space:]]*$//' | tr -d '\r' | tr -d '"' | tr -d "'" 2>/dev/null || true)
+                  
+                  if [ -n "$exclude_patterns" ]; then
+                    echo "找到排除模式:"
+                    echo "$exclude_patterns"
+                    
+                    while IFS= read -r pattern; do
+                      pattern=$(echo "$pattern" | xargs)
+                      if [ -n "$pattern" ]; then
+                        echo "检查模式: '$pattern' 对文件: '$file'"
+                        # 简单的模式匹配
+                        if [[ "$file" == "$pattern" ]] || 
+                           [[ "$file" == */"$pattern" ]] || 
+                           [[ "$file" == *"$pattern"* ]]; then
                           echo "❌ 文件 $file 被 $ignore_file 中的模式 '$pattern' 排除"
                           should_exclude=true
                           break 2
                         fi
-                      done <<< "$exclude_patterns"
-                    fi
+                      fi
+                    done <<< "$exclude_patterns"
                   else
-                    # 简单的文本解析（备用方案）
-                    exclude_patterns=$(grep -E "^\s*-\s*" "$ignore_file" | sed 's/^[[:space:]]*-[[:space:]]*//' | sed 's/[[:space:]]*$//')
-                    if [ -n "$exclude_patterns" ]; then
-                      while IFS= read -r pattern; do
-                        pattern=$(echo "$pattern" | xargs)
-                        if [[ "$file" == $pattern ]] || [[ "$file" == */$pattern ]] || [[ "$file" =~ $pattern ]]; then
-                          echo "❌ 文件 $file 被 $ignore_file 中的模式 '$pattern' 排除"
-                          should_exclude=true
-                          break 2
-                        fi
-                      done <<< "$exclude_patterns"
+                    echo "忽略文件中没有找到有效的排除模式"
+                    # 尝试其他格式
+                    alt_patterns=$(grep -E "^exclude:" "$ignore_file" -A 10 2>/dev/null | grep -E "^\s*-" | sed -e 's/^[[:space:]]*-[[:space:]]*//' -e 's/[[:space:]]*$//' | tr -d '\r' | tr -d '"' | tr -d "'" 2>/dev/null || true)
+                    if [ -n "$alt_patterns" ]; then
+                      echo "找到替代格式的排除模式:"
+                      echo "$alt_patterns"
                     fi
                   fi
                 fi
-                dir=$(dirname "$dir")
+                
+                # 移动到父目录，防止无限循环
+                parent_dir=$(dirname "$dir")
+                if [ "$parent_dir" = "$dir" ]; then
+                  break
+                fi
+                dir="$parent_dir"
               done
               
               if [ "$should_exclude" = false ]; then
