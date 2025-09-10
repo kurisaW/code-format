@@ -30,10 +30,20 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Install specific clang-format version
-        uses: jidicula/clang-format-action@v4.13.0
-        with:
-          clang-format-version: '13.0.0'
+      - name: Install latest clang-format
+        run: |
+          # 添加 LLVM 官方源（Ubuntu 20.04/22.04）
+          wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
+          echo "deb http://apt.llvm.org/$(lsb_release -cs)/ llvm-toolchain-$(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/llvm.list
+          echo "deb http://apt.llvm.org/$(lsb_release -cs)/ llvm-toolchain-$(lsb_release -cs)-16 main" | sudo tee -a /etc/apt/sources.list.d/llvm.list
+          
+          sudo apt-get update
+          sudo apt-get install -y clang-format-16
+          
+          # 设置为默认版本
+          sudo update-alternatives --install /usr/bin/clang-format clang-format /usr/bin/clang-format-16 100
+          
+          echo "✅ Installed: $(clang-format --version)"
 
       - name: Get changed files from PR
         id: changed-files
