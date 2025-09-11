@@ -1,1 +1,0 @@
-bsp/renesas/etherkit/ra/code2.c
