@@ -82,7 +82,7 @@ jobs:
                 "如有问题欢迎联系我们，再次感谢您的贡献！💐"
                 "If you have any questions, feel free to reach out. Thanks again for your contribution!"
               )
-              
+
               # 拼接数组为多行字符串
               message=$(printf "%s\n" "${message_lines[@]}")
 
