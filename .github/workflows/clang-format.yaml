@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       exclude_patterns:
-        description: "排除文件/目录 (以逗号间隔)\n Files/Directories to exclude (comma-separated)"
+        description: "排除文件/目录 (以逗号间隔)\n Files/Directories to exclude(comma-separated)"
         required: false
         default: ''
       branch:
@@ -21,7 +21,7 @@ jobs:
     if: |
       github.repository_owner != 'kurisaW'
     runs-on: ubuntu-latest
-
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -29,6 +29,7 @@ jobs:
           ref: ${{ github.event.inputs.branch }}
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
+          # 添加这行确保使用LF行尾符
           lfs: false
 
       - name: Install clang-format
@@ -38,204 +39,103 @@ jobs:
         run: |
           echo "📋 clang-format version information:"
           clang-format --version
+          echo "📋 Detailed version info:"
+          clang-format -version
+          # 检查支持的功能
+          echo "📋 Checking supported features..."
+          clang-format --help | grep -i "align\|consecutive" || echo "No align/consecutive options found"
 
       - name: Get changed files from PR
         id: changed-files
         uses: tj-actions/changed-files@v44
         with:
+          since_last_remote_commit: true
           separator: ","
 
       - name: Find source files to format
         id: find-files
         run: |
-          #!/usr/bin/env bash
-          # 注意：不要 set -e（避免被某些非致命命令中断）
-          shopt -s globstar nullglob
-
+          # 获取PR中修改的文件
           CHANGED_FILES="${{ steps.changed-files.outputs.all_changed_files }}"
-          echo "=== PR中修改的文件 ==="
-          if [ -z "$CHANGED_FILES" ]; then
-            echo "(空)"
-          else
-            printf '%s\n' "$CHANGED_FILES" | tr ',' '\n'
-          fi
-          echo "----------------------------------------------"
-
+          echo "PR中修改的文件: $CHANGED_FILES"
+          
+          # 如果没有修改的文件，退出
           if [ -z "$CHANGED_FILES" ]; then
             echo "❌ PR中没有修改的文件"
             echo "files_count=0" >> $GITHUB_OUTPUT
             exit 0
           fi
-
-          # --- 把逗号分隔的改动文件转成数组 ---
-          mapfile -t CHANGED_ARR < <(printf '%s\n' "$CHANGED_FILES" | tr ',' '\n')
-
-          # --- 只保留需要格式化的源文件扩展名（tj-actions/changed-files已经过滤了，但保留兼容性） ---
-          declare -a CAND_FILES=()
-          for f in "${CHANGED_ARR[@]}"; do
-            # 去掉可能的前后空白
-            f="$(echo "$f" | xargs)"
-            if [[ "$f" =~ \.(c|cpp|cc|h|hpp|hh|cxx|hxx|inc|inl|ipp|tpp|txx|C|H)$ ]]; then
-              CAND_FILES+=("$f")
-            fi
-          done
-
-          if [ "${#CAND_FILES[@]}" -eq 0 ]; then
-            echo "❌ 没有需要格式化的源文件"
-            echo "files_count=0" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-
-          # --- 构建排除模式数组 ---
-          INPUT_EXCLUDES="${{ github.event.inputs.exclude_patterns }}"
-          declare -a PATTERNS=()
           
-          if [ -n "$INPUT_EXCLUDES" ]; then
-            # 用户通过 workflow input 指定的 exclude_patterns（优先使用）
-            IFS=',' read -ra TMP <<< "$INPUT_EXCLUDES"
-            for p in "${TMP[@]}"; do
-              p="$(echo "$p" | xargs)"   # trim
-              [ -n "$p" ] && PATTERNS+=("$p")
-            done
-            echo "使用用户传入的 exclude_patterns (优先)"
-          else
-            # 修复2：查找所有可能的 .ignore_format.yml 文件
-            declare -a IGNORE_FILES=()
-            
-            # 查找仓库中所有的 .ignore_format.yml 文件
-            while IFS= read -r -d '' ignore_file; do
-              IGNORE_FILES+=("$ignore_file")
-            done < <(find . -name ".ignore_format.yml" -type f -print0)
-            
-            if [ "${#IGNORE_FILES[@]}" -gt 0 ]; then
-              echo "找到以下 .ignore_format.yml 文件:"
-              for ignore_file in "${IGNORE_FILES[@]}"; do
-                echo "  $ignore_file"
-              done
-              
-              # 读取所有找到的 .ignore_format.yml 文件
-              for ignore_file in "${IGNORE_FILES[@]}"; do
-                echo "正在读取: $ignore_file"
-                # 获取该文件所在目录，用于相对路径处理
-                ignore_dir="$(dirname "$ignore_file")"
-                
-                while IFS= read -r raw; do
-                  line="$(echo "$raw" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"  # trim
-                  [ -z "$line" ] && continue
-                  case "$line" in
-                    \#*) continue ;;  # 注释行跳过
-                  esac
-                  
-                  # 如果是相对路径且ignore文件不在根目录，需要调整路径
-                  if [[ "$ignore_dir" != "." && ! "$line" =~ ^/ ]]; then
-                    # 去掉开头的 ./
-                    ignore_dir_clean="${ignore_dir#./}"
-                    adjusted_pattern="${ignore_dir_clean}/${line}"
-                    PATTERNS+=("$adjusted_pattern")
-                    echo "  规则: $line -> $adjusted_pattern"
-                  else
-                    PATTERNS+=("$line")
-                    echo "  规则: $line"
-                  fi
-                done < "$ignore_file"
-              done
-            else
-              echo "未找到 .ignore_format.yml 文件"
-            fi
-          fi
-
-          echo "=== 最终排除模式 ==="
-          if [ "${#PATTERNS[@]}" -eq 0 ]; then
-            echo "无"
-          else
-            for p in "${PATTERNS[@]}"; do
-              echo "$p"
-            done
-          fi
-
-          # --- 应用排除规则 (支持通配符和目录模式) ---
-          declare -a FILTERED=()
-          for f in "${CAND_FILES[@]}"; do
-            skip=false
-            if [ "${#PATTERNS[@]}" -gt 0 ]; then
-              for p in "${PATTERNS[@]}"; do
-                # 规范化模式：
-                pp="$p"
-                pp="$(echo "$pp" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
-
-                # 如果以 '/' 结尾，视作目录，扩展为 dir/** （匹配所有子文件）
-                if [[ "$pp" == */ ]]; then
-                  pp="${pp%/}/**"
-                else
-                  # 如果模式未包含通配符，且对应的路径为实际目录，则把它当作目录
-                  if [[ "$pp" != *'*'* && "$pp" != *'?'* ]]; then
-                    if [ -d "$pp" ]; then
-                      pp="${pp%/}/**"
-                    fi
-                  fi
-                fi
-
-                # 使用 bash 的 glob 匹配进行比较（已启用 globstar）
-                if [[ "$f" == $pp ]]; then
-                  echo "❌ 文件 $f 被忽略 (匹配模式: $p -> $pp)"
-                  skip=true
-                  break
-                fi
-              done
-            fi
-
-            if [ "$skip" = false ]; then
-              FILTERED+=("$f")
+          # 过滤出需要格式化的源文件（扩展clang-format支持的文件类型）
+          FILES=""
+          IFS=',' read -ra FILE_ARRAY <<< "$CHANGED_FILES"
+          for file in "${FILE_ARRAY[@]}"; do
+            if [[ "$file" =~ \.(cpp|h|c|hpp|cc|hh|C|H|cp|cxx|hxx|inc|inl|ipp|tpp|txx)$ ]]; then
+              FILES="$FILES$file"$'\n'
             fi
           done
-
-          if [ "${#FILTERED[@]}" -eq 0 ]; then
+          
+          FILES=$(echo "$FILES" | sort | uniq)
+          
+          # 处理排除模式
+          EXCLUDE_PATTERNS="${{ github.event.inputs.exclude_patterns }}"
+          if [ -n "$EXCLUDE_PATTERNS" ] && [ -n "$FILES" ]; then
+            IFS=',' read -ra PATTERNS <<< "$EXCLUDE_PATTERNS"
+            for pattern in "${PATTERNS[@]}"; do
+              pattern=$(echo "$pattern" | xargs)  # 去除空格
+              if [ -n "$pattern" ]; then
+                # 去除末尾的斜杠（如果有）
+                pattern=${pattern%/}
+                echo "排除模式: $pattern"
+                # 使用 grep 过滤排除模式
+                FILES=$(echo "$FILES" | grep -v "$pattern" || echo "$FILES")
+              fi
+            done
+          fi
+          
+          if [ -z "$FILES" ]; then
             echo "❌ 没有需要格式化的文件（可能都被排除了）"
             echo "files_count=0" >> $GITHUB_OUTPUT
             exit 0
           fi
-
-          echo "=== 最终需要格式化的文件 ==="
-          for ff in "${FILTERED[@]}"; do
-            echo "$ff"
-          done
-
-          FILE_COUNT=${#FILTERED[@]}
+          
+          # 显示找到的文件用于调试
+          echo "需要格式化的文件:"
+          echo "$FILES"
+          
+          FILE_COUNT=$(echo "$FILES" | wc -l)
           echo "找到 $FILE_COUNT 个需要格式化的文件"
           echo "files_count=$FILE_COUNT" >> $GITHUB_OUTPUT
-
-          # 把列表写到 GITHUB_OUTPUT (多行变量)
+          
+          # 将文件列表保存为多行输出
           echo "files_list<<EOF" >> $GITHUB_OUTPUT
-          for ff in "${FILTERED[@]}"; do
-            echo "$ff" >> $GITHUB_OUTPUT
-          done
+          echo "$FILES" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Format code with clang-format
         if: steps.find-files.outputs.files_count != '0'
         run: |
+          echo "开始格式化代码..."
           FILES="${{ steps.find-files.outputs.files_list }}"
-          # 读回文件列表到数组
-          mapfile -t TO_FORMAT <<< "$FILES"
-
-          echo "开始格式化 ${#TO_FORMAT[@]} 个文件..."
-          for f in "${TO_FORMAT[@]}"; do
-            f="$(echo "$f" | xargs)"  # trim
-            if [ -z "$f" ]; then
-              continue
-            fi
-            if [ ! -f "$f" ]; then
-              echo "⚠️  文件不存在: $f"
-              continue
-            fi
-            echo "📝 格式化: $f"
-            if clang-format -style=file -i "$f"; then
-              echo "✅ 成功: $f"
+          
+          # 使用clang-format批量格式化文件
+          echo "$FILES" | xargs -I {} sh -c '
+            file="{}"
+            if [ -f "$file" ]; then
+              echo "📝 格式化: $file"
+              clang-format -style=file -i "$file"
+              if [ $? -eq 0 ]; then
+                echo "✅ 格式化成功: $file"
+              else
+                echo "❌ 格式化失败: $file"
+                exit 1
+              fi
             else
-              echo "⚠️  clang-format 处理失败（已跳过）: $f"
+              echo "⚠️  文件不存在: $file"
             fi
-          done
-          echo "完成格式化步骤（有失败不会中断 Job）"
+          '
+          
+          echo "✅ 代码格式化完成"
 
       - name: Check for changes
         id: check-changes
@@ -254,19 +154,18 @@ jobs:
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-
+          
           git add -A
-          git commit -m "style: format code with clang-format [skip ci]" || true
-          git push origin HEAD:${{ github.event.inputs.branch }} || true
-
-          echo "✅ 代码格式化完成并已尝试推送到分支 ${{ github.event.inputs.branch }}"
+          git commit -m "style: format code with clang-format [skip ci]"
+          git push origin HEAD:${{ github.event.inputs.branch }}
+          
+          echo "✅ 代码格式化完成并已推送到分支 ${{ github.event.inputs.branch }}"
 
       - name: Summary
         run: |
           echo "=== 格式化总结 ==="
           echo "分支: ${{ github.event.inputs.branch }}"
-          echo "用户排除模式 (输入): ${{ github.event.inputs.exclude_patterns || '无' }}"
-          echo "仓库 .ignore_format.yml 文件: $(find . -name '.ignore_format.yml' -type f | wc -l) 个"
+          echo "排除模式: ${{ github.event.inputs.exclude_patterns || '无' }}"
           echo "处理文件数: ${{ steps.find-files.outputs.files_count }}"
           echo "有更改: ${{ steps.check-changes.outputs.has_changes }}"
           echo "clang-format 版本: $(clang-format --version | head -1)"
