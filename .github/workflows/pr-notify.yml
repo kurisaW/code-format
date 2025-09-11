@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   notify-format:
-    if: github.repository == 'kurisaW/code-format'
+    if: github.repository_owner == 'kurisaW'
     runs-on: ubuntu-latest
     steps:
       - name: Check if first commit and add comment
@@ -64,6 +64,8 @@ jobs:
                 "Set files/directories to exclude (directories should end with \"/\")"
                 "- 将目标分支设置为：**\`${branch}\`**"
                 "Set the target branch to: **\`${branch}\`**"
+                "- 设置PR number为：**\`${{ github.event.number }}\`**"
+                "Set the PR number to: **\`${{ github.event.number }}\`**"
                 ""
                 "3. **等待工作流完成 | Wait for the workflow to complete**"
                 "格式化后的代码将自动推送至你的分支。"
