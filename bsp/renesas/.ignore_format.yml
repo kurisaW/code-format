@@ -1,11 +1,9 @@
-# BSP | Renesas
-
-*/ra/**
-*/ra_cfg/**
-*/ra_gen/**
-*/rzn/**
-*/rzn_cfg/**
-*/rzn_gen/**
-*/rzt/**
-*/rzt_cfg/**
-*/rzt_gen/**
+IgnoreFormat:
+  - "**/ra_cfg/**"           # 排除所有 ra_cfg 目录及其内容
+  - "**/ra/**"              # 排除任何子目录中的 ra/ 目录
+  - "**/generated/**"       # 排除任何位置的 generated 目录
+  - "third_party/*"         # 排除顶层的 third_party 目录
+  - "**/test/**"            # 排除所有 test 目录
+  - "build/"                # 排除 build 目录
+  - "*.pb.cc"               # 排除所有 Protocol Buffers 生成的 .pb.cc 文件
+  - "*.pb.h"                # 排除所有 Protocol Buffers 生成的 .pb.h 文件
